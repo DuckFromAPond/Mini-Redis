@@ -42,6 +42,10 @@ export function parse(input: string): string[] | string | Number | null | Error 
   const arrSize = Number(parts[0].slice(1)); 
   parts.shift();
 
+  if (arrSize === -1) { 
+    return null 
+  }
+
   for (let i = 0; i < arrSize; i++) { 
     // first part is the defines datatype 
     const dt = parts[0].slice(0,1);
@@ -62,4 +66,7 @@ export function parse(input: string): string[] | string | Number | null | Error 
 
   return msg; 
 }
- 
+
+export function serialize() { 
+
+}
