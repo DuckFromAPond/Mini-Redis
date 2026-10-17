@@ -60,6 +60,11 @@ export function parse(input: string): string[] | string | Number | null | Error 
       case '$': 
         msg.push(parts[0]); 
         parts.shift();
+        break;
+      default: 
+        msg.push("UNKNOWN");       // default to UNKNOWN for now instead of silently failing
+        parts.shift(); 
+        break;
     }
     
   }
@@ -67,6 +72,15 @@ export function parse(input: string): string[] | string | Number | null | Error 
   return msg; 
 }
 
-export function serialize() { 
+// TODO come back later
+export function serialize(data: string | null):string { 
+  if (data === null) { 
+    return "$-1\r\n"; 
+  }
 
+  const dt = "$"
+  const len = String(data.length);    //Buffer.byteLength(data)
+  const newline = "\r\n";
+  
+  return (dt+len+newline+data+newline)
 }
