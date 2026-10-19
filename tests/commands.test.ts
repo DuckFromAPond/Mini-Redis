@@ -22,3 +22,8 @@ test('SET & GET command', () => {
 test('ECHO command', () => { 
     expect(handleCommands(["echo", "Hello World"], new Store)).toEqual("Hello World");
 })
+
+// ERROR test 
+test('ECHO rejects extra arguments', () => { 
+    expect(() => handleCommands(["echo", "hello", "world"], new Store)).toThrow("incorrect number of arguments given")
+})
