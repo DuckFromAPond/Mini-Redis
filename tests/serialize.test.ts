@@ -9,3 +9,6 @@ test('serialize null', () => {
     expect(serialize(null)).toEqual("$-1\r\n"); 
 })
 
+test('serialize an error', () => {
+    expect(serialize(new Error("Error message"))).toEqual("-Error message\r\n");
+})

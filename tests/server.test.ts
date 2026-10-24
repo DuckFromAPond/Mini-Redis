@@ -1,6 +1,6 @@
-import { expect, test } from 'vitest'
-import net from "node:net";
-import Redis from "ioredis"
+// import { expect, test } from 'vitest'
+// import net from "node:net";
+// import Redis from "ioredis"
 // import { startServer } from "@/src/server.js"
 
 // test("PING over a real connection", async () => {

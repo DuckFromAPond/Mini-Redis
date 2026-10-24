@@ -73,10 +73,14 @@ export function parse(input: string): string[] | string | Number | null | Error 
 }
 
 // TODO come back later
-export function serialize(data: string | null):string { 
+export function serialize(data: string | null | Error ):string { 
   // null case
   if (data === null) { 
     return "$-1\r\n"; 
+  }
+
+  if (data instanceof Error) {
+    return `-${data.message}\r\n`;
   }
 
   const dt = "$"

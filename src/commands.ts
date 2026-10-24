@@ -2,49 +2,54 @@
 import { Store } from "@/src/store.js";
 
 // for response part of the map (takes args and curr store as input) 
-type Handler = (args: string[], store: Store) => string | Error;
+type Handler = (args: string[], store: Store) => string | null | Error;
 
 // map for all commands 
 const handlers = new Map<string, Handler>([
     ["PING", () => "PONG"],
+
     ["SET", (args, store) => { 
         const [key, value] = args;
-        if (!key || !value) { 
+        // "" is still valid so cannot use ! here 
+        if (key === undefined || value === undefined) { 
             throw Error("invalid key/value"); 
         }
 
         store.set(key,value); 
         return "OK";
     }],
+
     ["GET", (args, store) => { 
         const [key] = args;
-        if (!key) { 
+        if (key === undefined) { 
             throw Error("invalid key"); 
         }
 
         const value = store.get(key); 
-        if (!value) { 
-            throw Error("invalid value"); 
+        if (value === undefined) { 
+            // no value is not an error but null
+            return null;
         }
         return value;
     }],
+
     ["ECHO", (args) => { 
         // wrong number of arguments echo "hello world" vs echo hello world
-        if (args.length > 1) { 
-            throw Error("incorrect number of arguments given"); 
+        if (args.length !== 1) {
+            throw new Error("incorrect number of arguments given");
         }
         const [value] = args;
 
-        if (!value) { 
+        if (value === undefined) { 
             throw Error("invalid value"); 
         }
 
-        return `${value}`;
+        return value;
     }
     ]
 ])
 
-export function handleCommands(command: string[], store: Store): string | Error { 
+export function handleCommands(command: string[], store: Store): string | null | Error { 
     const [name, ...args] = command;
     const key = name?.toUpperCase()
     
