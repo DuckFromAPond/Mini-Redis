@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest"
+    "test": "vitest run",
+    "start": "tsx src/server.ts", 
+    "dev": "tsx watch src/server.ts"
   },
   "keywords": [],
   "author": "",

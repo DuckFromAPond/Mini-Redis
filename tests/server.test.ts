@@ -1,5 +1,7 @@
-// TODO install the redis client here first 
-// import { expect, test } from 'vitest'
+import { expect, test } from 'vitest'
+import net from "node:net";
+import Redis from "ioredis"
+// import { startServer } from "@/src/server.js"
 
 // test("PING over a real connection", async () => {
 //   const server = await startServer(0);              // 0 means "any free port"
