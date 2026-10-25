@@ -17,9 +17,10 @@ export function handleMessages(input:string, store: Store): string {
         // transforms the throws into the error response 
         if (err instanceof Error) {
             // all transformation unified in the serialize  
-            serialize(err);
+            return serialize(err);
         }
+        throw err;
     }    
-        
-    return "HELLO :)";
+
+    return serialize(new Error("expected an array"));
 }

@@ -84,7 +84,7 @@ export function serialize(data: string | null | Error ):string {
   }
 
   const dt = "$"
-  const len = String(data.length);    //Buffer.byteLength(data)
+  const len = String(Buffer.byteLength(data));       // for special case like café 
   const newline = "\r\n";
   
   return (dt+len+newline+data+newline)

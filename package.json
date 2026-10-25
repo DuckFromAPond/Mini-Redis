@@ -2,11 +2,12 @@
   "name": "redis-tiny",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "private": true,
+  "main": "index.ts",
   "scripts": {
     "test": "vitest run",
-    "start": "tsx src/server.ts", 
-    "dev": "tsx watch src/server.ts"
+    "start": "tsx src/index.ts", 
+    "dev": "tsx watch src/index.ts"
   },
   "keywords": [],
   "author": "",
