@@ -7,7 +7,7 @@ export function startServer(port: number = 6379): Promise<net.Server> {
 
     const server = net.createServer((socket) => { 
         socket.on("data", (chunk) =>  { 
-            // console.log("received:", JSON.stringify(chunk.toString()));
+            // console.log("received:", JSON.stringify(chunk.toString()));      // for debugging
             
             // pass req into the message  
             const response = handleMessages(chunk.toString(), store)
@@ -24,6 +24,7 @@ export function startServer(port: number = 6379): Promise<net.Server> {
 
     
     return new Promise((resolve) => {
+        console.log("SERVER UP")
         server.listen(port, () => resolve(server));   // wait until it's really listening
     });
 }
