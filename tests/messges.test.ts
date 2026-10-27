@@ -4,7 +4,7 @@ import { Store } from '@/src/store.js';
 
 test('PING command -> parse -> command -> serialize -> PONG', () => { 
     const store = new Store();
-    expect(handleMessages("*1\r\n$4\r\nping\r\n", store)).toEqual("$4\r\nPONG\r\n"); 
+    expect(handleMessages("*1\r\n$4\r\nping\r\n", store)).toEqual("+PONG\r\n"); 
 })
 
 test('GET command -> not found', () => {

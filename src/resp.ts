@@ -72,7 +72,7 @@ export function parse(input: string): string[] | string | Number | null | Error 
   return msg; 
 }
 
-// TODO come back later
+// TODO come back later (NEED TO NOT ALWAYS RETURN $ but also + too)
 export function serialize(data: string | null | Error ):string { 
   // null case
   if (data === null) { 
@@ -81,6 +81,11 @@ export function serialize(data: string | null | Error ):string {
 
   if (data instanceof Error) {
     return `-${data.message}\r\n`;
+  }
+
+  // FIXME temp fix
+  if (data.startsWith("+")) {
+    return `${data}\r\n`;
   }
 
   const dt = "$"

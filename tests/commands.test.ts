@@ -4,17 +4,17 @@ import { Store } from '@/src/store.js';
 
 // PING test 
 test('PING command', () => { 
-    expect(handleCommands(['ping'], new Store())).toEqual("PONG"); 
+    expect(handleCommands(['ping'], new Store())).toEqual("+PONG"); 
 })
 
 test('PING command', () => { 
-    expect(handleCommands(['PING'], new Store())).toEqual("PONG"); 
+    expect(handleCommands(['PING'], new Store())).toEqual("+PONG"); 
 })
 
 // SET & GET test 
 test('SET & GET command', () => {    
     const store = new Store();                   
-    handleCommands(["set", "name", "coffee"], store);  
+    expect(handleCommands(["set", "name", "coffee"], store)).toEqual("+OK");  
     expect(handleCommands(["get", "name"], store)).toEqual("coffee");
 })
 

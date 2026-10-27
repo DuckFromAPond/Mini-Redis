@@ -6,7 +6,7 @@ type Handler = (args: string[], store: Store) => string | null | Error;
 
 // map for all commands 
 const handlers = new Map<string, Handler>([
-    ["PING", () => "PONG"],
+    ["PING", () => "+PONG"],            // FIXME small change might revert later 
 
     ["SET", (args, store) => { 
         const [key, value] = args;
@@ -16,7 +16,7 @@ const handlers = new Map<string, Handler>([
         }
 
         store.set(key,value); 
-        return "OK";
+        return "+OK";
     }],
 
     ["GET", (args, store) => { 
