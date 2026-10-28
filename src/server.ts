@@ -24,7 +24,7 @@ export function startServer(port: number = 6379): Promise<net.Server> {
 
     
     return new Promise((resolve) => {
-        console.log("SERVER UP")
+        // console.log("SERVER UP")
         server.listen(port, () => resolve(server));   // wait until it's really listening
     });
 }
