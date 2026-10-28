@@ -9,8 +9,8 @@ export class SimpleString {
 }
 
 // handle val check for given length and data (then parse to number)
-function parseInteger(value : string, desc?:string) : number {
-  // check if the value contains a number 
+export function parseInteger(value : string, desc?:string) : number {
+  // check if the value contains a number
   if (!/^-?\d+$/.test(value)) { 
     throw new SyntaxError(`missing ${desc} value`)
   }
@@ -29,7 +29,7 @@ export function parse(input: string): string[] | string | number | null | Error 
 
   // trialing \r\n check for existence
   if (parts[parts.length - 1] !== "") {
-    throw new SyntaxError("message must end with \\r\\n");
+    throw new SyntaxError("RESP must end with \\r\\n");
   }
 
   // for satifying noUncheckedIndexedAccess
@@ -90,28 +90,28 @@ export function parse(input: string): string[] | string | number | null | Error 
   for (let i = 0; i < arrSize; i++) { 
     // first part is the defines datatype 
     const dt = parts[0].slice(0,1);
-    parts.shift() 
     
     switch (dt) { 
       // TODO NOTE: technically supported but very rare 
       // case '+': 
       // case '-':
-      // case ':':
+      // case ':': 
       // case '*': 
       case '$': {
-        const strLength = parseInteger(parts[0], "bulk length");
+        const strLength = parseInteger(parts[0].slice(1), "bulk length");
         parts.shift();                                          // TODO might be better to move to a pointer sys for efficiency
         
         if (strLength === -1) { 
           return null
         }
 
-        const msg = parts[0]
-        const len = Buffer.byteLength(msg);
+        const len = Buffer.byteLength(parts[0]);
         if (len !== strLength) { 
           throw new SyntaxError("mismatch length between passed length and actual")
         }
-        return msg;
+        msg.push(parts[0]);
+        parts.shift();
+        break;
       }
       default: 
         throw new SyntaxError(`unsupported RESP element type: ${dt}`);

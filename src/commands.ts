@@ -1,15 +1,44 @@
 // handles parsed text 
 import { Store } from "@/src/store.js";
-import { SimpleString } from "@/src/resp.js";
+import { SimpleString,parseInteger } from "@/src/resp.js";
 
 // for response part of the map (takes args and curr store as input) 
 type Handler = (args: string[], store: Store) => string | SimpleString | null | Error;
 
 // helper parser for expire timer 
-function parseExpiry( ): void{
-    // TODO 3 VALIDATE HERE  
-    // EXPIRY TIMER is date.now + timer btw
-    return
+function parseExpiry(optionExp : string, timer : string | undefined): number {
+    let multiplier: number;
+    let relative: boolean; 
+
+    switch (optionExp){
+        case "EX":
+            // 1 sec = 1000 millisecond
+            multiplier = 1000; 
+            relative = true;
+            break;
+        case "PX":
+            // 1 millisecond
+            multiplier = 1;
+            relative = true;
+            break;
+        case "EXAT":
+            multiplier = 1000; 
+            relative = false;
+            break;
+        case "PXAT":
+            multiplier = 1; 
+            relative = false;
+            break;
+        default: 
+            throw new SyntaxError(`the command ${optionExp} doesn't exist`)
+    }
+
+    if (timer===undefined) { 
+        throw new SyntaxError("missing timer value")
+    }
+    
+    const value = parseInteger(timer) * multiplier; // in millisecond
+    return (relative ? Date.now() + value : value)
 }
 
 
@@ -19,18 +48,24 @@ const handlers = new Map<string, Handler>([
 
     ["SET", (args, store) => { 
         // wrong number of arguments 
-        if (args.length !== 1) {
+        if (args.length > 4) {
             throw new Error("incorrect number of arguments given");
         }
 
-        const [key, value, exp, timer] = args;
+        const [key, value, optionExp, timer] = args;
 
         // "" is still valid so cannot use ! here 
         if (key === undefined || value === undefined) { 
-            throw Error("invalid key/value"); 
+            throw new Error("invalid key/value"); 
         }
 
-        store.set(key,value); 
+        if (optionExp === undefined) { 
+            store.set(key, value);
+        } else {
+            const expireAt = parseExpiry(optionExp?.toUpperCase(), timer); 
+            store.set(key,value,expireAt); 
+        }
+
         return new SimpleString("OK"); 
     }],
 
@@ -42,7 +77,7 @@ const handlers = new Map<string, Handler>([
 
         const [key] = args;
         if (key === undefined) { 
-            throw Error("invalid key"); 
+            throw new Error(`${key} key doesn't exist`); 
         }
 
         const value = store.get(key); 
@@ -61,7 +96,7 @@ const handlers = new Map<string, Handler>([
         const [value] = args;
 
         if (value === undefined) { 
-            throw Error("invalid value"); 
+            throw new Error("missing ECHO message"); 
         }
 
         return value;
