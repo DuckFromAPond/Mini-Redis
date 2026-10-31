@@ -3,10 +3,10 @@ import { Store } from "@/src/store.js";
 import { SimpleString,parseInteger } from "@/src/resp.js";
 
 // for response part of the map (takes args and curr store as input) 
-type Handler = (args: string[], store: Store) => string | SimpleString | null | Error;
+type Handler = (args: (string | null)[], store: Store) => string | SimpleString | null | Error;
 
 // helper parser for expire timer 
-function parseExpiry(optionExp : string, timer : string | undefined): number {
+function parseExpiry(optionExp : string, timer : string | null | undefined): number {
     let multiplier: number;
     let relative: boolean; 
 
@@ -33,8 +33,8 @@ function parseExpiry(optionExp : string, timer : string | undefined): number {
             throw new SyntaxError(`the command ${optionExp} doesn't exist`)
     }
 
-    if (timer===undefined) { 
-        throw new SyntaxError("missing timer value")
+    if (timer===undefined || timer === null|| parseInteger(timer) <= 0) { 
+        throw new SyntaxError("invalid timer value")
     }
     
     const value = parseInteger(timer) * multiplier; // in millisecond
@@ -55,11 +55,11 @@ const handlers = new Map<string, Handler>([
         const [key, value, optionExp, timer] = args;
 
         // "" is still valid so cannot use ! here 
-        if (key === undefined || value === undefined) { 
+        if (key === undefined || value === undefined || key === null || value === null) { 
             throw new Error("invalid key/value"); 
         }
 
-        if (optionExp === undefined) { 
+        if (optionExp === undefined || optionExp === null) { 
             store.set(key, value);
         } else {
             const expireAt = parseExpiry(optionExp?.toUpperCase(), timer); 
@@ -76,7 +76,7 @@ const handlers = new Map<string, Handler>([
         }
 
         const [key] = args;
-        if (key === undefined) { 
+        if (key === undefined || key === null) { 
             throw new Error(`${key} key doesn't exist`); 
         }
 
@@ -95,7 +95,7 @@ const handlers = new Map<string, Handler>([
         }
         const [value] = args;
 
-        if (value === undefined) { 
+        if (value === undefined || value === null) { 
             throw new Error("missing ECHO message"); 
         }
 
@@ -104,7 +104,7 @@ const handlers = new Map<string, Handler>([
     ]
 ])
 
-export function handleCommands(command: string[], store: Store): string | SimpleString | null | Error { 
+export function handleCommands(command: (string | null)[], store: Store): string | SimpleString | null | Error { 
     const [name, ...args] = command;
     const key = name?.toUpperCase()
     

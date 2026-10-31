@@ -9,7 +9,7 @@ export class SimpleString {
 }
 
 // handle val check for given length and data (then parse to number)
-export function parseInteger(value : string, desc?:string) : number {
+export function parseInteger(value : string, desc:string = "integer") : number {
   // check if the value contains a number
   if (!/^-?\d+$/.test(value)) { 
     throw new SyntaxError(`missing ${desc} value`)
@@ -24,10 +24,35 @@ export function parseInteger(value : string, desc?:string) : number {
   return parsedInt; 
 }
 
-export function parse(input: string): string[] | string | number | null | Error {
+function parseBulkString(parts : string[], type:string = "arr") : string | null{ 
+  // this will literally never pass because it is already checked in the main func (only to pass noUncheckedIndexedAccess)
+  if (parts[0] === undefined) { 
+    throw new SyntaxError("invalid input")
+  }
+  
+  const strLength = parseInteger(parts[0].slice(1), "bulk length");
+  parts.shift();                                          // TODO might be better to move to a pointer sys for efficiency
+  
+  if (strLength === -1) { 
+    return null;
+  } 
+
+  if (strLength < -1) { 
+    throw new SyntaxError("invalid string length")
+  }
+  
+  const len = Buffer.byteLength(parts[0]);
+  if (len !== strLength) { 
+    throw new SyntaxError("mismatch length between passed length and actual")
+  }
+
+  return parts[0];
+}
+
+export function parse(input: string): (string | null)[] | string | number | null | Error {
   const parts = input.split("\r\n");
 
-  // trialing \r\n check for existence
+  // trailing \r\n check for existence
   if (parts[parts.length - 1] !== "") {
     throw new SyntaxError("RESP must end with \\r\\n");
   }
@@ -46,28 +71,29 @@ export function parse(input: string): string[] | string | number | null | Error 
     switch (dt) { 
       // simple string 
       case '+': 
-        return arg;
+        if (parts.length !== 2) {
+          throw new SyntaxError("unexpected data after RESP value");
+        }
+        return arg; 
       // errors
       case '-':
+        if (parts.length !== 2) {
+          throw new SyntaxError("unexpected data after RESP value");
+        }
         return new Error(arg); 
       // integers
       case ':':
+        if (parts.length !== 2) {
+          throw new SyntaxError("unexpected data after RESP value");
+        }
         return parseInteger(arg, "integer");
       // bulk string 
       case '$': {
-        const strLength = parseInteger(arg, "bulk length");
-        parts.shift();                                          // TODO might be better to move to a pointer sys for efficiency
-        
-        if (strLength === -1) { 
-          return null
-        }
-
-        const msg = parts[0]
-        const len = Buffer.byteLength(msg);
-        if (len !== strLength) { 
-          throw new SyntaxError("mismatch length between passed length and actual")
-        }
-        return msg;
+        const text = parseBulkString(parts, "bulkStr");
+        if ((parts.length !== 2 && text !== null) || (parts.length !== 1 && text === null)) {
+          throw new SyntaxError("unexpected data after RESP value");
+        } 
+        return text;
       }
       default: 
         throw new SyntaxError(`unsupported RESP element type: ${dt}`);
@@ -75,7 +101,7 @@ export function parse(input: string): string[] | string | number | null | Error 
   }
 
   // array case
-  const msg: string[] = [];
+  const msg: (string | null)[] = [];
   const arrSize = parseInteger(parts[0].slice(1), "array size"); 
   parts.shift();
 
@@ -88,6 +114,11 @@ export function parse(input: string): string[] | string | number | null | Error 
   }
 
   for (let i = 0; i < arrSize; i++) { 
+    // check before extracting
+    if (parts[0] === undefined) { 
+      throw new SyntaxError("invalid input")
+    }
+
     // first part is the defines datatype 
     const dt = parts[0].slice(0,1);
     
@@ -98,19 +129,14 @@ export function parse(input: string): string[] | string | number | null | Error 
       // case ':': 
       // case '*': 
       case '$': {
-        const strLength = parseInteger(parts[0].slice(1), "bulk length");
-        parts.shift();                                          // TODO might be better to move to a pointer sys for efficiency
-        
-        if (strLength === -1) { 
-          return null
-        }
+        const temp = parseBulkString(parts, "arr");
+        msg.push(temp);
 
-        const len = Buffer.byteLength(parts[0]);
-        if (len !== strLength) { 
-          throw new SyntaxError("mismatch length between passed length and actual")
+        // shift removes the next item so when it is null nothing should be shifted
+        if (temp !== null) {
+          parts.shift();
         }
-        msg.push(parts[0]);
-        parts.shift();
+        
         break;
       }
       default: 

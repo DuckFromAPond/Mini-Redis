@@ -63,3 +63,7 @@ test('*1\\r\\n$4\\r\\nping', () => {
 test('*1\\r\\n$4\\r\\nping\\r\\nextra\\r\\n', () => { 
     expect(() => parse("*1\r\n$4\r\nping\r\nextra\r\n")).toThrow("unexpected data after the array"); 
 })
+
+test('*2\\r\\n$-1\\r\\n$3\\r\\nfoo\\r\\n', () => { 
+    expect(parse("*2\r\n$-1\r\n$3\r\nfoo\r\n")).toEqual([null, "foo"]);
+})

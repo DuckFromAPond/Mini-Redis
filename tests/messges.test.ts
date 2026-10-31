@@ -29,8 +29,14 @@ test('SET & GET command with expiry timer', () => {
     expect(handleMessages("*2\r\n$3\r\nget\r\n$8\r\npassword\r\n", store)).toEqual("$6\r\ncoffee\r\n")
 
     vi.useFakeTimers()
-    vi.advanceTimersByTime(11000);
+    vi.advanceTimersByTime(10000);
 
     expect(handleMessages("*2\r\n$3\r\nget\r\n$8\r\npassword\r\n", store)).toEqual("$-1\r\n")
 })
 
+test('ERROR SET command with expiry timer', () => {    
+    const store = new Store();                   
+    expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$2\r\nAB\r\n", store)).toEqual("-missing integer value\r\n");
+    expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$1\r\n0\r\n", store)).toEqual("-invalid timer value\r\n")
+    expect(handleMessages("*4\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$1\r\n1\r\n", store)).toEqual("-the command 1 doesn't exist\r\n")
+})

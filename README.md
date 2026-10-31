@@ -12,3 +12,4 @@ A small Redis clone written in TypeScript to learn how Redis functions. Document
 - Key expiry (`SET key value EX seconds`)
 - RESP3 support ( `HELLO 3` handshake and the extra types)
 - Change from using shift to pointer
+- Rewrite the error message to match real Redis error 
