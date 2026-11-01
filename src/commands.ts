@@ -3,7 +3,7 @@ import { Store } from "@/src/store.js";
 import { SimpleString,parseInteger } from "@/src/resp.js";
 
 // for response part of the map (takes args and curr store as input) 
-type Handler = (args: (string | null)[], store: Store) => string | SimpleString | null | Error;
+type Handler = (args: (string | null)[], store: Store) => string | number | SimpleString | null | Error;
 
 // helper parser for expire timer 
 function parseExpiry(optionExp : string, timer : string | null | undefined): number {
@@ -100,15 +100,61 @@ const handlers = new Map<string, Handler>([
         }
 
         return value;
-    }
-    ]
+    }], 
+
+    ["EXIST", (args, store) => { 
+        // nothing passed in
+        if (args.length < 1) { 
+            throw new Error ("no key passed in")
+        }
+
+        let count=0; 
+        for (const key of args) {
+            if (key === undefined || key === null) { 
+                continue; 
+            }
+
+            const value = store.get(key); 
+            if (value === undefined || value === null) { 
+                continue;
+            }
+
+            count+=1;
+        }
+
+        return count;
+    }], 
+
+    ["DEL", (args, store) => { 
+        // nothing passed in
+        if (args.length < 1) { 
+            throw new Error ("no key passed in")
+        }
+
+        let count=0; 
+        for (const key of args) {
+            if (key === undefined || key === null) { 
+                continue; 
+            }
+
+            const value = store.delete(key); 
+            if (value === false) { 
+                continue;
+            }
+
+            count+=1;
+        }
+
+        return count;
+    }]
+
 ])
 
-export function handleCommands(command: (string | null)[], store: Store): string | SimpleString | null | Error { 
+export function handleCommands(command: (string | null)[], store: Store): string | number | SimpleString | null | Error { 
     const [name, ...args] = command;
     const key = name?.toUpperCase()
     
-    if (key === undefined) { 
+    if (key === undefined || key === null) { 
         throw Error("invalid value"); 
     }   
 

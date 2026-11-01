@@ -152,7 +152,7 @@ export function parse(input: string): (string | null)[] | string | number | null
   return msg; 
 }
 
-export function serialize(data: string | SimpleString | null | Error ):string { 
+export function serialize(data: string | number | SimpleString | null | Error ):string { 
   // null case
   if (data === null) { 
     return "$-1\r\n"; 
@@ -165,6 +165,10 @@ export function serialize(data: string | SimpleString | null | Error ):string {
   // simple string 
   if (data instanceof SimpleString) {
     return `+${data.text}\r\n`;
+  }
+
+  if (typeof data === "number") {
+    return `:${data}\r\n`;
   }
 
   const len = String(Buffer.byteLength(data));       // for special case like café 

@@ -1,7 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { handleMessages } from '@/src/messages.js';
 import { Store } from '@/src/store.js';
-import { SimpleString } from '@/src/resp.js';
 
 test('PING command -> parse -> command -> serialize -> PONG', () => { 
     const store = new Store();
@@ -34,9 +33,37 @@ test('SET & GET command with expiry timer', () => {
     expect(handleMessages("*2\r\n$3\r\nget\r\n$8\r\npassword\r\n", store)).toEqual("$-1\r\n")
 })
 
-test('ERROR SET command with expiry timer', () => {    
+test('ERROR SET command', () => {    
     const store = new Store();                   
     expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$2\r\nAB\r\n", store)).toEqual("-missing integer value\r\n");
     expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$1\r\n0\r\n", store)).toEqual("-invalid timer value\r\n")
     expect(handleMessages("*4\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$1\r\n1\r\n", store)).toEqual("-the command 1 doesn't exist\r\n")
+})
+
+
+test('SET & EXIST command', () => {    
+    const store = new Store();                   
+    expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\norder\r\n$6\r\ncoffee\r\n", store)).toEqual("+OK\r\n")  
+    expect(handleMessages("*2\r\n$5\r\nexist\r\n$5\r\norder\r\n", store)).toEqual(":1\r\n")
+    expect(handleMessages("*2\r\n$5\r\nexist\r\n$5\r\nplace\r\n", store)).toEqual(":0\r\n")
+
+    expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\ndrink\r\n$3\r\ntea\r\n", store)).toEqual("+OK\r\n") 
+    expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\nprice\r\n$4\r\n5.99\r\n", store)).toEqual("+OK\r\n") 
+
+    expect(handleMessages("*4\r\n$5\r\nexist\r\n$5\r\norder\r\n$5\r\ndrink\r\n$5\r\nprice\r\n", store)).toEqual(":3\r\n")
+        
+})
+
+
+test('SET & DEL command', () => {    
+    const store = new Store();                   
+    expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\norder\r\n$6\r\ncoffee\r\n", store)).toEqual("+OK\r\n")  
+    expect(handleMessages("*2\r\n$3\r\ndel\r\n$5\r\norder\r\n", store)).toEqual(":1\r\n")
+    expect(handleMessages("*2\r\n$3\r\ndel\r\n$5\r\nplace\r\n", store)).toEqual(":0\r\n")
+
+    expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\ndrink\r\n$3\r\ntea\r\n", store)).toEqual("+OK\r\n") 
+    expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\nprice\r\n$4\r\n5.99\r\n", store)).toEqual("+OK\r\n") 
+
+    expect(handleMessages("*4\r\n$3\r\ndel\r\n$5\r\norder\r\n$5\r\ndrink\r\n$5\r\nprice\r\n", store)).toEqual(":2\r\n")
+        
 })

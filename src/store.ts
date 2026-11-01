@@ -23,4 +23,8 @@ export class Store {
         
         return entryData?.value
     }
+
+    delete(key: string): boolean {
+        return this.data.delete(key);
+    }
 }
