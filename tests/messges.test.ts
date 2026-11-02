@@ -14,12 +14,12 @@ test('GET command -> not found', () => {
 
 test('ECHO hello world -> multiple args -> error', () => {
     const store = new Store(); 
-    expect(handleMessages("*3\r\n$4\r\necho\r\n$5\r\nhello\r\n$5\r\nworld\r\n", store)).toEqual("-incorrect number of arguments given\r\n")
+    expect(handleMessages("*3\r\n$4\r\necho\r\n$5\r\nhello\r\n$5\r\nworld\r\n", store)).toEqual("-ERR incorrect number of arguments given\r\n")
 })
 
 test('STRING parse -> error', () => { 
     const store = new Store(); 
-    expect(handleMessages("+OK\r\n", store)).toEqual("-expected an array\r\n")
+    expect(handleMessages("+OK\r\n", store)).toEqual("-ERR expected an array\r\n")
 })
 
 test('SET & GET command with expiry timer', () => {    
@@ -35,9 +35,9 @@ test('SET & GET command with expiry timer', () => {
 
 test('ERROR SET command', () => {    
     const store = new Store();                   
-    expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$2\r\nAB\r\n", store)).toEqual("-missing integer value\r\n");
-    expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$1\r\n0\r\n", store)).toEqual("-invalid timer value\r\n")
-    expect(handleMessages("*4\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$1\r\n1\r\n", store)).toEqual("-the command 1 doesn't exist\r\n")
+    expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$2\r\nAB\r\n", store)).toEqual("-ERR invalid integer value\r\n");
+    expect(handleMessages("*5\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$2\r\nex\r\n$1\r\n0\r\n", store)).toEqual("-ERR invalid timer value\r\n")
+    expect(handleMessages("*4\r\n$3\r\nset\r\n$8\r\npassword\r\n$6\r\ncoffee\r\n$1\r\n1\r\n", store)).toEqual("-ERR the command 1 doesn't exist\r\n")
 })
 
 
@@ -54,7 +54,6 @@ test('SET & EXIST command', () => {
         
 })
 
-
 test('SET & DEL command', () => {    
     const store = new Store();                   
     expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\norder\r\n$6\r\ncoffee\r\n", store)).toEqual("+OK\r\n")  
@@ -66,4 +65,18 @@ test('SET & DEL command', () => {
 
     expect(handleMessages("*4\r\n$3\r\ndel\r\n$5\r\norder\r\n$5\r\ndrink\r\n$5\r\nprice\r\n", store)).toEqual(":2\r\n")
         
+})
+
+
+test('INCR & DECR command', () => {    
+    const store = new Store();                   
+    expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\norder\r\n$6\r\ncoffee\r\n", store)).toEqual("+OK\r\n")
+    expect(handleMessages("*2\r\n$4\r\nincr\r\n$5\r\norder\r\n", store)).toEqual("-ERR value is not an integer or out of range\r\n");
+    expect(handleMessages("*2\r\n$4\r\ndecr\r\n$5\r\norder\r\n", store)).toEqual("-ERR value is not an integer or out of range\r\n");
+    
+    expect(handleMessages("*2\r\n$4\r\nincr\r\n$5\r\ncount\r\n", store)).toEqual(":1\r\n")
+    expect(handleMessages("*2\r\n$4\r\nincr\r\n$5\r\ncount\r\n", store)).toEqual(":2\r\n")
+
+    expect(handleMessages("*2\r\n$4\r\ndecr\r\n$5\r\ncount\r\n", store)).toEqual(":1\r\n")
+    expect(handleMessages("*2\r\n$4\r\ndecr\r\n$5\r\nprice\r\n", store)).toEqual(":-1\r\n")
 })

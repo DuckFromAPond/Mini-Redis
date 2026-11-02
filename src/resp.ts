@@ -10,15 +10,15 @@ export class SimpleString {
 
 // handle val check for given length and data (then parse to number)
 export function parseInteger(value : string, desc:string = "integer") : number {
-  // check if the value contains a number
+  // check if the value is a number
   if (!/^-?\d+$/.test(value)) { 
-    throw new SyntaxError(`missing ${desc} value`)
+    throw new SyntaxError(`invalid ${desc} value`)
   }
 
   const parsedInt = Number(value)
   // check if number is a safe int 
   if (!Number.isSafeInteger(parsedInt)) { 
-    throw new SyntaxError(`invalid ${desc} value`)
+    throw new SyntaxError(`incorrect ${desc} value`)
   }
 
   return parsedInt; 
@@ -159,7 +159,7 @@ export function serialize(data: string | number | SimpleString | null | Error ):
   }
 
   if (data instanceof Error) {
-    return `-${data.message}\r\n`;
+    return `-ERR ${data.message}\r\n`;
   }
 
   // simple string 

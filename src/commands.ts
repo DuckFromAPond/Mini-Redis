@@ -1,6 +1,6 @@
 // handles parsed text 
 import { Store } from "@/src/store.js";
-import { SimpleString,parseInteger } from "@/src/resp.js";
+import { SimpleString, parseInteger } from "@/src/resp.js";
 
 // for response part of the map (takes args and curr store as input) 
 type Handler = (args: (string | null)[], store: Store) => string | number | SimpleString | null | Error;
@@ -77,7 +77,7 @@ const handlers = new Map<string, Handler>([
 
         const [key] = args;
         if (key === undefined || key === null) { 
-            throw new Error(`${key} key doesn't exist`); 
+            throw new Error(`${key} key is invalid`); 
         }
 
         const value = store.get(key); 
@@ -146,7 +146,67 @@ const handlers = new Map<string, Handler>([
         }
 
         return count;
-    }]
+    }],
+
+    ["INCR", (args, store) => {
+        // nothing passed in 
+        if (args.length !== 1) { 
+            throw new Error ("invalid number of key passed in")
+        }
+
+        const [key] = args;
+        if (key === undefined || key === null) { 
+            throw new Error(`${key} key is invalid`); 
+        }
+
+        let value = store.get(key); 
+        if (value === undefined) { 
+            value = "0";
+            store.set(key, value);
+        }
+
+        try { 
+            const numValue = parseInteger(value, "stored") + 1;                
+            store.set(key, numValue.toString());
+            return numValue; 
+        } catch (err) { 
+            // change error message
+            if (err instanceof SyntaxError) {
+                throw new Error("value is not an integer or out of range");
+            }
+            throw err;
+        }
+    }],
+
+    ["DECR", (args, store) => {
+        // nothing passed in 
+        if (args.length !== 1) { 
+            throw new Error ("invalid number of key passed in")
+        }
+
+        const [key] = args;
+        if (key === undefined || key === null) { 
+            throw new Error(`${key} key is invalid`); 
+        }
+
+        let value = store.get(key); 
+        if (value === undefined) { 
+            value = "0";
+            store.set(key, value);
+        }
+
+        try { 
+            const numValue = parseInteger(value, "stored") - 1;                
+            store.set(key, numValue.toString());
+            return numValue; 
+        } catch (err) { 
+            // change error message
+            if (err instanceof SyntaxError) {
+                throw new Error("value is not an integer or out of range");
+            }
+            throw err;
+        }
+    }],
 
 ])
 
