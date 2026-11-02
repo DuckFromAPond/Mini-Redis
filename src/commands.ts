@@ -42,7 +42,7 @@ function parseExpiry(optionExp : string, timer : string | null | undefined): num
 }
 
 
-// map for all commands 
+// map for all commands (mostly just checks)
 const handlers = new Map<string, Handler>([
     ["PING", () =>  new SimpleString("PONG")],
 

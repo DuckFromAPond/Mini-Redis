@@ -1,8 +1,11 @@
-// in-memory store for get and set 
+// in-memory store
+
+// entry can either be a list or a string 
 type Entry = 
     | { type: "string"; value: string; expiresAt?: number } 
     | { type: "list"; value: string[]; expiresAt?: number };
 
+// store handles data manip 
 export class Store { 
     data = new Map<string, Entry>(); 
 
@@ -10,6 +13,7 @@ export class Store {
     private getLiveEntry(key: string): Entry | undefined {
         const entry = this.data.get(key);
 
+        // if expire date exist and date over the expiry then delete data and return undef 
         if (entry?.expiresAt !== undefined && Date.now() >= entry.expiresAt) {
             this.data.delete(key);
             return undefined;
@@ -18,6 +22,43 @@ export class Store {
         return entry;
     }
 
+    // helper function for incrementing/decrementing value (mostly just validation checks)
+    private adjustInteger(key: string, delta: 1 | -1): number {
+        const entry = this.getLiveEntry(key);
+
+        // if entry does not exist, make new key with value of 1 or -1
+        if (entry === undefined) {
+            this.set(key, String(delta));
+            return delta;
+        }
+
+        // cannot be list type 
+        if (entry.type === "list") {
+            throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
+        }
+
+        // check for int
+        if (!/^-?\d+$/.test(entry.value)) {
+            throw new Error("value is not an integer");
+        }
+
+        const current = Number(entry.value);
+        // check if it is a safe num
+        if (!Number.isSafeInteger(current)) {
+            throw new Error("value out of range");
+        }
+
+        // update number
+        const updated = current + delta;
+        // check if it is a safe num
+        if (!Number.isSafeInteger(updated)) {
+            throw new Error("value out of range");
+        }
+
+        entry.value = String(updated);
+        return updated;
+    }
+    
     set(key: string, value: string, expiresAt?: number): void {
         this.data.set(key, {
             type: "string",
@@ -29,10 +70,12 @@ export class Store {
     get(key: string): string | undefined {
         const entry = this.getLiveEntry(key);
 
+        // return undefined if entry doesn't exist
         if (entry === undefined) {
             return undefined;
         }
         
+        // cannot be list 
         if (entry.type === "list") {
             throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
         }
@@ -43,6 +86,7 @@ export class Store {
     lpush(key: string, values: string[]): number {
         let entry = this.getLiveEntry(key);
 
+        // init list if entry is undef 
         if (entry === undefined) {
             entry = { type: "list", value: [] };
             this.data.set(key, entry);
@@ -50,6 +94,7 @@ export class Store {
             throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
         }
 
+        // loop through values and push to list
         for (const value of values) {
             entry.value.unshift(value);
         }
@@ -67,52 +112,10 @@ export class Store {
     }
 
     incr(key:string) : number { 
-        const entry = this.getLiveEntry(key); 
-        if (entry === undefined) {
-            this.set(key, "1");
-            return 1;
-        }
-
-        if (entry.type === "list") {
-            throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
-        }
-
-        if (!/^-?\d+$/.test(entry.value)) { 
-            throw new Error("value is not an integer");
-        }
-
-        const intValue = Number(entry.value) + 1
-        // check if number is a safe int 
-        if (!Number.isSafeInteger(intValue)) { 
-            throw new Error("value out of range");
-        }
-        
-        entry.value = intValue.toString();
-        return intValue;
+        return this.adjustInteger(key, 1);
     }
 
     decr(key:string) : number { 
-        const entry = this.getLiveEntry(key); 
-        if (entry === undefined) {
-            this.set(key, "-1");
-            return -1;
-        }
-
-        if (entry.type === "list") {
-            throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
-        }
-
-        if (!/^-?\d+$/.test(entry.value)) { 
-            throw new Error("value is not an integer");
-        }
-
-        const intValue = Number(entry.value) - 1
-        // check if number is a safe int 
-        if (!Number.isSafeInteger(intValue)) { 
-            throw new Error("value out of range");
-        }
-        
-        entry.value = intValue.toString();
-        return intValue;
+        return this.adjustInteger(key, -1);
     }
 }
