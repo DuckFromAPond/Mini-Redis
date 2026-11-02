@@ -71,8 +71,8 @@ test('SET & DEL command', () => {
 test('INCR & DECR command', () => {    
     const store = new Store();                   
     expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\norder\r\n$6\r\ncoffee\r\n", store)).toEqual("+OK\r\n")
-    expect(handleMessages("*2\r\n$4\r\nincr\r\n$5\r\norder\r\n", store)).toEqual("-ERR value is not an integer or out of range\r\n");
-    expect(handleMessages("*2\r\n$4\r\ndecr\r\n$5\r\norder\r\n", store)).toEqual("-ERR value is not an integer or out of range\r\n");
+    expect(handleMessages("*2\r\n$4\r\nincr\r\n$5\r\norder\r\n", store)).toEqual("-ERR value is not an integer\r\n");
+    expect(handleMessages("*2\r\n$4\r\ndecr\r\n$5\r\norder\r\n", store)).toEqual("-ERR value is not an integer\r\n");
     
     expect(handleMessages("*2\r\n$4\r\nincr\r\n$5\r\ncount\r\n", store)).toEqual(":1\r\n")
     expect(handleMessages("*2\r\n$4\r\nincr\r\n$5\r\ncount\r\n", store)).toEqual(":2\r\n")

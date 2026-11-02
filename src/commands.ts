@@ -108,21 +108,15 @@ const handlers = new Map<string, Handler>([
             throw new Error ("no key passed in")
         }
 
-        let count=0; 
-        for (const key of args) {
+        // filter through each key 
+        return args.filter((key) => {
             if (key === undefined || key === null) { 
-                continue; 
+                throw new Error ("invalid key")
             }
 
-            const value = store.get(key); 
-            if (value === undefined || value === null) { 
-                continue;
-            }
-
-            count+=1;
-        }
-
-        return count;
+            // if returned true, then saved
+            return store.exists(key);
+        }).length
     }], 
 
     ["DEL", (args, store) => { 
@@ -131,21 +125,15 @@ const handlers = new Map<string, Handler>([
             throw new Error ("no key passed in")
         }
 
-        let count=0; 
-        for (const key of args) {
+        // filter through each key 
+        return args.filter((key) => {
             if (key === undefined || key === null) { 
-                continue; 
+                throw new Error ("invalid key")
             }
 
-            const value = store.delete(key); 
-            if (value === false) { 
-                continue;
-            }
-
-            count+=1;
-        }
-
-        return count;
+            // if returned true, then saved
+            return store.delete(key);
+        }).length
     }],
 
     ["INCR", (args, store) => {
@@ -159,23 +147,7 @@ const handlers = new Map<string, Handler>([
             throw new Error(`${key} key is invalid`); 
         }
 
-        let value = store.get(key); 
-        if (value === undefined) { 
-            value = "0";
-            store.set(key, value);
-        }
-
-        try { 
-            const numValue = parseInteger(value, "stored") + 1;                
-            store.set(key, numValue.toString());
-            return numValue; 
-        } catch (err) { 
-            // change error message
-            if (err instanceof SyntaxError) {
-                throw new Error("value is not an integer or out of range");
-            }
-            throw err;
-        }
+        return store.incr(key)
     }],
 
     ["DECR", (args, store) => {
@@ -189,24 +161,17 @@ const handlers = new Map<string, Handler>([
             throw new Error(`${key} key is invalid`); 
         }
 
-        let value = store.get(key); 
-        if (value === undefined) { 
-            value = "0";
-            store.set(key, value);
-        }
-
-        try { 
-            const numValue = parseInteger(value, "stored") - 1;                
-            store.set(key, numValue.toString());
-            return numValue; 
-        } catch (err) { 
-            // change error message
-            if (err instanceof SyntaxError) {
-                throw new Error("value is not an integer or out of range");
-            }
-            throw err;
-        }
+        return store.decr(key)
     }],
+
+    // ["LPUSH", (args, store) => {
+    //     // nothing passed in 
+    //     if (args.length !== 1) { 
+    //         throw new Error ("invalid number of key passed in")
+    //     }
+
+    //     return
+    // }],
 
 ])
 
