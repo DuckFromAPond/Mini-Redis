@@ -2,12 +2,12 @@ import { parse, serialize } from "@/src/resp.js";
 import { handleCommands } from "@/src/commands.js";
 import { Store } from "@/src/store.js";
 
-export function handleMessages(input:string, store: Store): string { 
+export async function handleMessages(input:string, store: Store): Promise<string> { 
     try {
         const parsedMsg = parse(input);
 
         if (Array.isArray(parsedMsg)){ 
-            const commandMsg = handleCommands(parsedMsg, store);
+            const commandMsg = await handleCommands(parsedMsg, store);
 
             const serializeMsg = serialize(commandMsg); 
 

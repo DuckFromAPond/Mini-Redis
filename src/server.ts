@@ -6,14 +6,20 @@ export function startServer(port: number = 6379): Promise<net.Server> {
     const store = new Store();
 
     const server = net.createServer((socket) => { 
+        // place incoming request into a queue for async handling  
+        let responseQueue = Promise.resolve();
+
         socket.on("data", (chunk) =>  { 
             // console.log("received:", JSON.stringify(chunk.toString()));      // for debugging
             
-            // pass req into the message  
-            const response = handleMessages(chunk.toString(), store)
-
-            // write the serialized reply -> redis-cli or the client library turns it into a readable value
-            socket.write(response);
+            // each connection gets its own queue and are handled as it arrives
+            responseQueue = responseQueue.then(async () => {
+                const response = await handleMessages(chunk.toString(), store);
+                socket.write(response);
+            }).catch((error: unknown) => {
+                console.error("request error:", error);
+                socket.destroy();
+            });
         })
 
         socket.on("error", (error) => {

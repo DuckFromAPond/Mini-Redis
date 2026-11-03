@@ -2,8 +2,11 @@
 
 // entry can either be a list or a string 
 type Entry = 
-    | { type: "string"; value: string; expiresAt?: number } 
-    | { type: "list"; value: string[]; expiresAt?: number };
+| { type: "string"; value: string; expiresAt?: number } 
+| { type: "list"; value: string[]; expiresAt?: number };
+
+// 
+const saveDir = "@/store"
 
 // store handles data manip 
 export class Store { 
@@ -58,7 +61,31 @@ export class Store {
         entry.value = String(updated);
         return updated;
     }
-    
+
+    private adjustList(key: string, values: string[], dir: "l" | "r"): number { 
+        let entry = this.getLiveEntry(key);
+
+        // init list if entry is undef 
+        if (entry === undefined) {
+            entry = { type: "list", value: [] };
+            this.data.set(key, entry);
+        } else if (entry.type === "string") {
+            throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
+        }
+
+        // loop through values and push to the head list
+        for (const value of values) {
+            if (dir === "l") { 
+                entry.value.unshift(value);
+            }
+            else if (dir === "r" ) { 
+                entry.value.push(value)
+            }
+        }
+
+        return entry.value.length;
+    }
+     
     set(key: string, value: string, expiresAt?: number): void {
         this.data.set(key, {
             type: "string",
@@ -84,22 +111,12 @@ export class Store {
     }
 
     lpush(key: string, values: string[]): number {
-        let entry = this.getLiveEntry(key);
+        return this.adjustList(key, values, "l")
+    }
 
-        // init list if entry is undef 
-        if (entry === undefined) {
-            entry = { type: "list", value: [] };
-            this.data.set(key, entry);
-        } else if (entry.type === "string") {
-            throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
-        }
-
-        // loop through values and push to list
-        for (const value of values) {
-            entry.value.unshift(value);
-        }
-
-        return entry.value.length;
+    
+    rpush(key: string, values: string[]): number {
+        return this.adjustList(key, values, "r")
     }
 
     exists(key: string): boolean {
@@ -117,5 +134,9 @@ export class Store {
 
     decr(key:string) : number { 
         return this.adjustInteger(key, -1);
+    }
+
+    async save() { 
+        // TODO   
     }
 }

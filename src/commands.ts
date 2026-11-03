@@ -2,8 +2,15 @@
 import { Store } from "@/src/store.js";
 import { SimpleString, parseInteger } from "@/src/resp.js";
 
+// commandResult holds all possible return type 
+type CommandResult = string | number | SimpleString | null | Error;
+
 // for response part of the map (takes args and curr store as input) 
-type Handler = (args: (string | null)[], store: Store) => string | number | SimpleString | null | Error;
+// note: Promise command result here for save since that is async (otherwise all other commands are not async)
+type Handler = (
+  args: (string | null)[],
+  store: Store
+) => CommandResult | Promise<CommandResult>;
 
 // helper parser for expire timer 
 function parseExpiry(optionExp : string, timer : string | null | undefined): number {
@@ -173,9 +180,14 @@ const handlers = new Map<string, Handler>([
     //     return
     // }],
 
+    ["SAVE", async (_args, store) => {
+        await store.save();
+        return new SimpleString("OK");
+    }],
+
 ])
 
-export function handleCommands(command: (string | null)[], store: Store): string | number | SimpleString | null | Error { 
+export async function handleCommands(command: (string | null)[], store: Store): Promise<CommandResult> { 
     const [name, ...args] = command;
     const key = name?.toUpperCase()
     

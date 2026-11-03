@@ -11,3 +11,4 @@ A small Redis clone written in TypeScript to learn how Redis functions. Document
 - RESP3 support ( `HELLO 3` handshake and the extra types)
 - Change from using shift to pointer
 - Rewrite the error message to match real Redis error 
+- REWRITE TODO WITH MORE DETAIL 
