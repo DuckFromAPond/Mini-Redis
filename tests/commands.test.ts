@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { handleCommands } from '@/src/commands.js';
 import { Store } from '@/src/store.js';
 import { SimpleString } from '@/src/resp.js';
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -68,7 +68,9 @@ test("SAVE command", async () => {
 });
 
 test("loading a saved snapshot restores strings and lists", async () => {
+    // make dir with "redis-tiny-" prefix stored in the temp dir 
     const directory = await mkdtemp(join(tmpdir(), "redis-tiny-"));
+    // make path to dump location using directory 
     const savePath = join(directory, "dump.json");
 
     try {
@@ -83,6 +85,25 @@ test("loading a saved snapshot restores strings and lists", async () => {
             type: "list",
             value: ["second", "first"],
         });
+    } finally {
+        // clean up dir 
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("invalid snapshot error explains how to recover", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "redis-tiny-"));
+    const savePath = join(directory, "dump.json");
+
+    try {
+        await writeFile(savePath, "{ invalid json", "utf8");
+
+        await expect(Store.load(savePath)).rejects.toThrow(
+            `Cannot load store snapshot "${savePath}": invalid JSON`,
+        );
+        await expect(Store.load(savePath)).rejects.toThrow(
+            "Back up and repair the file, or remove it to start with an empty store, then restart.",
+        );
     } finally {
         await rm(directory, { recursive: true, force: true });
     }

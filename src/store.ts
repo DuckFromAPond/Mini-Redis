@@ -1,33 +1,51 @@
 // in-memory store
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+
 
 // entry can either be a list or a string 
 type Entry = 
 | { type: "string"; value: string; expiresAt?: number } 
 | { type: "list"; value: string[]; expiresAt?: number };
 
+// set the default save path to current dir in a json file named "dump.json"
 const defaultSavePath = resolve(process.cwd(), "dump.json");
 
+function invalidSnapshotError(savePath: string, detail: string): SyntaxError {
+    return new SyntaxError(
+        `Cannot load store snapshot "${savePath}": ${detail}. ` +
+        "Back up and repair the file, or remove it to start with an empty store, then restart.",
+    );
+}
+
+// helper function for load to check for validity 
+// takes values and if passed validation then value's type is Entry type (instead of being unknown)
 function isEntry(value: unknown): value is Entry {
     if (typeof value !== "object" || value === null) {
         return false;
     }
 
+    // initialize entry as record (since entry set as an object anyway)
     const entry = value as Record<string, unknown>;
-    if (
-        entry.expiresAt !== undefined &&
-        (typeof entry.expiresAt !== "number" || !Number.isFinite(entry.expiresAt))
-    ) {
+
+    // return false if expiry date exist but isn't a number or isn't finite 
+    if (entry.expiresAt !== undefined && 
+        (typeof entry.expiresAt !== "number" || !Number.isFinite(entry.expiresAt))) {
         return false;
     }
 
+    // pass condition for a string type, return true if value is actually string
     if (entry.type === "string") {
         return typeof entry.value === "string";
     }
+
+    // pass condition for a list type, return true if value is actually list
     if (entry.type === "list") {
-        return Array.isArray(entry.value) && entry.value.every((item) => typeof item === "string");
+        // a list here is valid if it is list of type string 
+        return (Array.isArray(entry.value) && entry.value.every((item) => typeof item === "string"));
     }
+
     return false;
 }
 
@@ -35,38 +53,55 @@ function isEntry(value: unknown): value is Entry {
 export class Store { 
     data = new Map<string, Entry>(); 
 
+    // default constructor to define a readonly savepath using the default 
     constructor(private readonly savePath = defaultSavePath) {}
 
+    // static makes load method belongs to the Store class itself and not each instance itself
     static async load(savePath = defaultSavePath): Promise<Store> {
         let contents: string;
         try {
+            // read from file 
             contents = await readFile(savePath, "utf8");
         } catch (error) {
+            // if save file doesn't exist/it can't read the file 
             if (
                 typeof error === "object" &&
                 error !== null &&
                 "code" in error &&
                 error.code === "ENOENT"
             ) {
+                // returns a fresh path with the given/default savepath 
                 return new Store(savePath);
+            }
+            
+            throw error;
+        }
+
+        // parse contents 
+        let snapshot: unknown;
+        try {
+            snapshot = JSON.parse(contents);
+        } catch (error) {
+            if (error instanceof SyntaxError) {
+                throw invalidSnapshotError(savePath, `invalid JSON (${error.message})`);
             }
             throw error;
         }
 
-        const snapshot: unknown = JSON.parse(contents);
         if (!Array.isArray(snapshot)) {
-            throw new SyntaxError("invalid store snapshot");
+            throw invalidSnapshotError(savePath, "expected an array of key-entry pairs");
         }
 
+        // make store and load entry into the store
         const store = new Store(savePath);
-        for (const item of snapshot) {
+        for (const [index, item] of snapshot.entries()) {
             if (!Array.isArray(item) || item.length !== 2) {
-                throw new SyntaxError("invalid store snapshot entry");
+                throw invalidSnapshotError(savePath, `invalid entry at index ${index}`);
             }
 
             const [key, entry] = item;
             if (typeof key !== "string" || !isEntry(entry)) {
-                throw new SyntaxError("invalid store snapshot entry");
+                throw invalidSnapshotError(savePath, `invalid entry at index ${index}`);
             }
 
             if (entry.expiresAt === undefined || Date.now() < entry.expiresAt) {
@@ -127,6 +162,7 @@ export class Store {
         return updated;
     }
 
+    // helper function for shifting left or right 
     private adjustList(key: string, values: string[], dir: "l" | "r"): number { 
         let entry = this.getLiveEntry(key);
 
@@ -202,13 +238,22 @@ export class Store {
     }
 
     async save(): Promise<void> {
+        // check each keys before saving 
         for (const key of this.data.keys()) {
             this.getLiveEntry(key);
         }
 
+        // stringify to save as JSON
         const snapshot = JSON.stringify([...this.data.entries()], null, 2);
-        await writeFile(this.savePath, snapshot, "utf8");
-    }
+        const tempPath = `${this.savePath}.${randomUUID()}.tmp`;
+        try {
+            await writeFile(tempPath, snapshot, "utf8");
 
-    
+            // if saving to a temp file is done without fail then rename the temp path to save path (data is unaffected and old file becomes the temp file)
+            await rename(tempPath, this.savePath);
+        } finally {
+            // clean up temp path 
+            await rm(tempPath, { force: true });
+        }
+    }
 }
