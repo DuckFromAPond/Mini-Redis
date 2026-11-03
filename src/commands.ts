@@ -192,14 +192,49 @@ const handlers = new Map<string, Handler>([
         return store.decr(key)
     }],
 
-    // ["LPUSH", (args, store) => {
-    //     // nothing passed in 
-    //     if (args.length !== 1) { 
-    //         throw new Error ("invalid number of key passed in")
-    //     }
+    ["LPUSH", (args, store) => {
+        // nothing passed in 
+        if (args.length < 2) { 
+            throw new Error ("invalid number of key passed in")
+        }
 
-    //     return
-    // }],
+        const [key, ...argsValues] = args;
+        if (key === undefined || key === null) { 
+            throw Error("invalid value"); 
+        }  
+
+        const values: string[] = [];
+        for (const value of argsValues) {
+            if (value === undefined || value === null) { 
+                throw Error("invalid value"); 
+            }  
+            values.push(value)
+        }
+
+        return store.lpush(key, values)
+    }],
+
+    ["RPUSH", (args, store) => {
+        // nothing passed in 
+        if (args.length < 2) { 
+            throw new Error ("invalid number of key passed in")
+        }
+
+        const [key, ...argsValues] = args;
+        if (key === undefined || key === null) { 
+            throw Error("invalid value"); 
+        }  
+
+        const values: string[] = [];
+        for (const value of argsValues) {
+            if (value === undefined || value === null) { 
+                throw Error("invalid value"); 
+            }  
+            values.push(value)
+        }
+
+        return store.rpush(key, values)
+    }],
 
     ["SAVE", async (args, store) => {
         // no other args should be passed in 

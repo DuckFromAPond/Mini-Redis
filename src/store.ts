@@ -215,6 +215,7 @@ export class Store {
         return this.adjustList(key, values, "l")
     }
 
+    // TODO lrange could be nice here 
     
     rpush(key: string, values: string[]): number {
         return this.adjustList(key, values, "r")
