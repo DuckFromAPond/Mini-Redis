@@ -2,37 +2,40 @@ import { expect, test } from 'vitest'
 import { handleCommands } from '@/src/commands.js';
 import { Store } from '@/src/store.js';
 import { SimpleString } from '@/src/resp.js';
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // PING test 
-test('PING command', async () => { 
-    await expect(handleCommands(['ping'], new Store())).resolves.toEqual(new SimpleString("PONG")); 
+test('PING command', () => { 
+    expect(handleCommands(['ping'], new Store())).toEqual(new SimpleString("PONG")); 
 })
 
-test('PING command', async () => { 
-    await expect(handleCommands(['PING'], new Store())).resolves.toEqual(new SimpleString("PONG")); 
+test('PING command', () => { 
+    expect(handleCommands(['PING'], new Store())).toEqual(new SimpleString("PONG")); 
 })
 
 // SET & GET test 
-test('SET & GET command', async () => {    
+test('SET & GET command', () => {    
     const store = new Store();                   
-    await expect(handleCommands(["set", "name", "coffee"], store)).resolves.toEqual(new SimpleString("OK"));  
-    await expect(handleCommands(["get", "name"], store)).resolves.toEqual("coffee");
+    expect(handleCommands(["set", "name", "coffee"], store)).toEqual(new SimpleString("OK"));  
+    expect(handleCommands(["get", "name"], store)).toEqual("coffee");
 })
 
-test('SET & GET command for simple string in bulk string', async () => {    
+test('SET & GET command for simple string in bulk string', () => {    
     const store = new Store();                   
-    await expect(handleCommands(["set", "greeting", "+hello"], store)).resolves.toEqual(new SimpleString("OK"));  
-    await expect(handleCommands(["get", "greeting"], store)).resolves.toEqual("+hello");
+    expect(handleCommands(["set", "greeting", "+hello"], store)).toEqual(new SimpleString("OK"));  
+    expect(handleCommands(["get", "greeting"], store)).toEqual("+hello");
 })
 
 // ECHO test 
-test('ECHO command', async () => { 
-    await expect(handleCommands(["echo", "Hello World"], new Store())).resolves.toEqual("Hello World");
+test('ECHO command', () => { 
+    expect(handleCommands(["echo", "Hello World"], new Store())).toEqual("Hello World");
 })
 
 // ERROR test 
-test('ECHO rejects extra arguments', async () => { 
-    await expect(handleCommands(["echo", "hello", "world"], new Store())).rejects.toThrow("incorrect number of arguments given")
+test('ECHO rejects extra arguments', () => { 
+    expect(() => handleCommands(["echo", "hello", "world"], new Store())).toThrow("incorrect number of arguments given")
 })
 
 test("lpush on a string key throws WRONGTYPE", () => {
@@ -48,6 +51,39 @@ test("lpush returns the new length", () => {
 });
 
 test("SAVE command", async () => {
-    const firstStore = new Store();
-    await expect(handleCommands(["save"], firstStore)).resolves.toEqual(new SimpleString("OK"));
+    const directory = await mkdtemp(join(tmpdir(), "redis-tiny-"));
+    const savePath = join(directory, "dump.json");
+
+    try {
+        const store = new Store(savePath);
+        store.set("name", "coffee");
+
+        await expect(handleCommands(["save"], store)).resolves.toEqual(new SimpleString("OK"));
+        await expect(readFile(savePath, "utf8")).resolves.toBe(
+            JSON.stringify([...store.data.entries()], null, 2),
+        );
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("loading a saved snapshot restores strings and lists", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "redis-tiny-"));
+    const savePath = join(directory, "dump.json");
+
+    try {
+        const original = new Store(savePath);
+        original.set("name", "coffee");
+        original.lpush("queue", ["first", "second"]);
+        await original.save();
+
+        const restored = await Store.load(savePath);
+        expect(restored.get("name")).toBe("coffee");
+        expect(restored.data.get("queue")).toEqual({
+            type: "list",
+            value: ["second", "first"],
+        });
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
 });

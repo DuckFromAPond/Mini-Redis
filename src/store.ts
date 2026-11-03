@@ -1,16 +1,81 @@
 // in-memory store
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 // entry can either be a list or a string 
 type Entry = 
 | { type: "string"; value: string; expiresAt?: number } 
 | { type: "list"; value: string[]; expiresAt?: number };
 
-// 
-const saveDir = "@/store"
+const defaultSavePath = resolve(process.cwd(), "dump.json");
+
+function isEntry(value: unknown): value is Entry {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+
+    const entry = value as Record<string, unknown>;
+    if (
+        entry.expiresAt !== undefined &&
+        (typeof entry.expiresAt !== "number" || !Number.isFinite(entry.expiresAt))
+    ) {
+        return false;
+    }
+
+    if (entry.type === "string") {
+        return typeof entry.value === "string";
+    }
+    if (entry.type === "list") {
+        return Array.isArray(entry.value) && entry.value.every((item) => typeof item === "string");
+    }
+    return false;
+}
 
 // store handles data manip 
 export class Store { 
     data = new Map<string, Entry>(); 
+
+    constructor(private readonly savePath = defaultSavePath) {}
+
+    static async load(savePath = defaultSavePath): Promise<Store> {
+        let contents: string;
+        try {
+            contents = await readFile(savePath, "utf8");
+        } catch (error) {
+            if (
+                typeof error === "object" &&
+                error !== null &&
+                "code" in error &&
+                error.code === "ENOENT"
+            ) {
+                return new Store(savePath);
+            }
+            throw error;
+        }
+
+        const snapshot: unknown = JSON.parse(contents);
+        if (!Array.isArray(snapshot)) {
+            throw new SyntaxError("invalid store snapshot");
+        }
+
+        const store = new Store(savePath);
+        for (const item of snapshot) {
+            if (!Array.isArray(item) || item.length !== 2) {
+                throw new SyntaxError("invalid store snapshot entry");
+            }
+
+            const [key, entry] = item;
+            if (typeof key !== "string" || !isEntry(entry)) {
+                throw new SyntaxError("invalid store snapshot entry");
+            }
+
+            if (entry.expiresAt === undefined || Date.now() < entry.expiresAt) {
+                store.data.set(key, entry);
+            }
+        }
+
+        return store;
+    }
 
     // helper function for checking expiery bfore getting/returning data
     private getLiveEntry(key: string): Entry | undefined {
@@ -136,7 +201,14 @@ export class Store {
         return this.adjustInteger(key, -1);
     }
 
-    async save() { 
-        // TODO   
+    async save(): Promise<void> {
+        for (const key of this.data.keys()) {
+            this.getLiveEntry(key);
+        }
+
+        const snapshot = JSON.stringify([...this.data.entries()], null, 2);
+        await writeFile(this.savePath, snapshot, "utf8");
     }
+
+    
 }

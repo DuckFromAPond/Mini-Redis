@@ -12,3 +12,7 @@ A small Redis clone written in TypeScript to learn how Redis functions. Document
 - Change from using shift to pointer
 - Rewrite the error message to match real Redis error 
 - REWRITE TODO WITH MORE DETAIL 
+
+`SAVE` writes the current store snapshot as JSON to `dump.json` in the current working directory. The server loads that snapshot when it starts; missing snapshots start with an empty store, while invalid snapshots or other file errors prevent startup. Expired entries are omitted when saving and loading. `startServer` accepts an optional second argument to select a different snapshot path.
+
+Command handling stays synchronous for ordinary commands. `SAVE` is asynchronous, and the server queues later requests from that same connection until the save finishes so replies remain in order.

@@ -180,14 +180,21 @@ const handlers = new Map<string, Handler>([
     //     return
     // }],
 
-    ["SAVE", async (_args, store) => {
+    ["SAVE", async (args, store) => {
+        if (args.length !== 0) {
+            throw new Error("incorrect number of arguments given");
+        }
+
         await store.save();
         return new SimpleString("OK");
     }],
 
 ])
 
-export async function handleCommands(command: (string | null)[], store: Store): Promise<CommandResult> { 
+export function handleCommands(
+  command: (string | null)[],
+  store: Store
+): CommandResult | Promise<CommandResult> { 
     const [name, ...args] = command;
     const key = name?.toUpperCase()
     
