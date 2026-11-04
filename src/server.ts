@@ -30,6 +30,7 @@ export async function startServer(
                     // mostly happens for when a save is called
                     asyncCommandInFlight = true;
                     void response
+                        // let promise resolve before continuing 
                         .then((reply) => {
                             socket.write(reply);
                         })

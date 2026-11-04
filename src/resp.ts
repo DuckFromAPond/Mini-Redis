@@ -8,6 +8,8 @@ export class SimpleString {
   }
 }
 
+type RespValue = string | number | null | Error | RespValue[];
+
 // handle val check for given length and data (then parse to number)
 export function parseInteger(value : string, desc:string = "integer") : number {
   // check if the value is a number
@@ -24,7 +26,7 @@ export function parseInteger(value : string, desc:string = "integer") : number {
   return parsedInt; 
 }
 
-function parseBulkString(parts : string[], type:string = "arr") : string | null{ 
+function parseBulkString(parts : string[]) : string | null{ 
   // this will literally never pass because it is already checked in the main func (only to pass noUncheckedIndexedAccess)
   if (parts[0] === undefined) { 
     throw new SyntaxError("invalid input")
@@ -49,7 +51,7 @@ function parseBulkString(parts : string[], type:string = "arr") : string | null{
   return parts[0];
 }
 
-export function parse(input: string): (string | null)[] | string | number | null | Error {
+export function parse(input: string): (string | null)[] | RespValue{
   const parts = input.split("\r\n");
 
   // trailing \r\n check for existence
@@ -89,7 +91,7 @@ export function parse(input: string): (string | null)[] | string | number | null
         return parseInteger(arg, "integer");
       // bulk string 
       case '$': {
-        const text = parseBulkString(parts, "bulkStr");
+        const text = parseBulkString(parts);
         if ((parts.length !== 2 && text !== null) || (parts.length !== 1 && text === null)) {
           throw new SyntaxError("unexpected data after RESP value");
         } 
@@ -101,7 +103,7 @@ export function parse(input: string): (string | null)[] | string | number | null
   }
 
   // array case
-  const msg: (string | null)[] = [];
+  const msg: RespValue[] = [];
   const arrSize = parseInteger(parts[0].slice(1), "array size"); 
   parts.shift();
 
@@ -123,13 +125,41 @@ export function parse(input: string): (string | null)[] | string | number | null
     const dt = parts[0].slice(0,1);
     
     switch (dt) { 
-      // TODO NOTE: technically supported but very rare 
-      // case '+': 
-      // case '-':
-      // case ':': 
-      // case '*': 
+      // technically supported but very rare 
+      case '+': {
+        const temp = parts[0].slice(1);
+        msg.push(temp);
+
+        // shift removes the next item so when it is null nothing should be shifted
+        if (temp !== null) {
+          parts.shift();
+        }
+        break;
+      }
+      case '-': { 
+        const temp = new Error(parts[0].slice(1));
+        msg.push(temp);
+
+        // shift removes the next item so when it is null nothing should be shifted
+        if (temp !== null) {
+          parts.shift();
+        }
+        break;
+      }
+      case ':': {
+        const temp = parseInteger(parts[0].slice(1));
+        msg.push(temp);
+
+        // shift removes the next item so when it is null nothing should be shifted
+        if (temp !== null) {
+          parts.shift();
+        }
+        break;
+
+      }
+      // case '*': {}
       case '$': {
-        const temp = parseBulkString(parts, "arr");
+        const temp = parseBulkString(parts);
         msg.push(temp);
 
         // shift removes the next item so when it is null nothing should be shifted
