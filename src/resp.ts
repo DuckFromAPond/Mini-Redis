@@ -117,6 +117,7 @@ function parseValue(input:Buffer, cursor: Cursor): RespValue {
 
 // parser function for processing input into understandable pieces for command handling  
 export function parse(input: string | Buffer): RespValue{
+  // reuse buffer if already exist 
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"); 
   const cursor = { offset: 0};               
 

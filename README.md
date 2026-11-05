@@ -34,7 +34,11 @@ client -> TCP (node:net) -> handleMessages -> parse -> command handler -> store 
 
 ## Save details
 
-(keep your existing section)
+SAVE writes the current store snapshot as JSON to dump.json in the current working directory. The server loads that snapshot when it starts; missing snapshots start with an empty store, while invalid snapshots or other file errors prevent startup. For an invalid snapshot, the startup error includes the file path and recovery guidance: back up and repair the file, or remove it to start with an empty store, then restart. Expired entries are omitted when saving and loading. startServer accepts an optional second argument to select a different snapshot path.
+
+Command handling stays synchronous for ordinary commands. SAVE is asynchronous, and the server queues later requests from that same connection until the save finishes so replies remain in order.
+
+NOTE: It is noticed that making the normal commands asynchronous with SAVE causes significant overhead on performance as found through Redis benchmark compared to when it is not async. This is most likely due to a combination of old commands already being lightweight and new scheduling cost for each request.
 
 ## Performance
 
@@ -44,6 +48,7 @@ Measured with `redis-benchmark -t set,get -n 100000 -q` against the local server
 | ------------------------ | ----------- | ----------- | --------------- |
 | Before async changes     |             |             |                 |
 | After async changes      | 55,772      | 64,062      | 0.823 / 0.783   |
+| Partial async + Pointer  |             |             |                 |
 | Real Redis (same machine)|             |             |                 |
 
 The `WARNING: Could not fetch server CONFIG` line is expected: the benchmark tool asks for server settings through `CONFIG`, which isn't implemented here. It doesn't affect the results.
@@ -52,8 +57,8 @@ Making ordinary commands async to support `SAVE` lowered throughput. The likely 
 
 ## Future improvements
 
+- Handle several commands arriving in one network chunk (pipelining) + add support for adding client info
 - OPTIMIZE PERFORMANCE 
-- Handle several commands arriving in one network chunk (pipelining) + add support for adding client info 
 - Handle a command split across several chunks
 - Argument-count errors for `GET` and `SET`
 - Inline commands (plain text like `PING`, without the array form)
