@@ -24,7 +24,7 @@ export async function startServer(
         const processChunk = (chunk: Buffer | string): void => {
             try {
                 // handle message (parse input -> command -> serialized response)
-                const response = handleMessages(chunk.toString(), store);
+                const response = handleMessages(chunk, store);
                 // if response is a promise, set async command as being in flight and resolve the promise 
                 if (response instanceof Promise) {
                     // mostly happens for when a save is called

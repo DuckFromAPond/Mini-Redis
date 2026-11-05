@@ -16,7 +16,8 @@ function isCommandArray(value: unknown): value is (string | null)[] {
         value.every((item) => typeof item === "string" || item === null);
 }
 
-export function handleMessages(input:string, store: Store): string | Promise<string> { 
+// message = the whole user input (a litle too late to rename for better clarity) 
+export function handleMessages(input: string | Buffer, store: Store): string | Promise<string> { 
     try {
         const parsedMsg = parse(input);
 

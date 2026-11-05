@@ -57,11 +57,11 @@ test(':-5\\r\\n', () => {
 })
 
 test('*1\\r\\n$4\\r\\nping', () => { 
-    expect(() => parse("*1\r\n$4\r\nping")).toThrow("RESP must end with \\r\\n"); 
+    expect(() => parse("*1\r\n$4\r\nping")).toThrow("invalid or incomplete bulk string"); 
 })
 
 test('*1\\r\\n$4\\r\\nping\\r\\nextra\\r\\n', () => { 
-    expect(() => parse("*1\r\n$4\r\nping\r\nextra\r\n")).toThrow("unexpected data after the array"); 
+    expect(() => parse("*1\r\n$4\r\nping\r\nextra\r\n")).toThrow("unexpected data after RESP value"); 
 })
 
 test('*2\\r\\n$-1\\r\\n$3\\r\\nfoo\\r\\n', () => { 

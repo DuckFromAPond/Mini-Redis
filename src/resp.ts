@@ -9,6 +9,7 @@ export class SimpleString {
 }
 
 type RespValue = string | number | null | Error | RespValue[];
+type Cursor = { offset: number };
 
 // handle val check for given length and data (then parse to number)
 export function parseInteger(value : string, desc:string = "integer") : number {
@@ -26,162 +27,110 @@ export function parseInteger(value : string, desc:string = "integer") : number {
   return parsedInt; 
 }
 
-function parseBulkString(parts : string[]) : string | null{ 
-  // this will literally never pass because it is already checked in the main func (only to pass noUncheckedIndexedAccess)
-  if (parts[0] === undefined) { 
-    throw new SyntaxError("invalid input")
-  }
-  
-  const strLength = parseInteger(parts[0].slice(1), "bulk length");
-  parts.shift();                                          // TODO might be better to move to a pointer sys for efficiency
-  
-  if (strLength === -1) { 
-    return null;
-  } 
-
-  if (strLength < -1) { 
-    throw new SyntaxError("invalid string length")
-  }
-  
-  const len = Buffer.byteLength(parts[0]);
-  if (len !== strLength) { 
-    throw new SyntaxError("mismatch length between passed length and actual")
+// save the line after the marker until its end where length is not given (so not bulk string) and update the offset accordingly
+function readLine(input: Buffer, cursor: Cursor) : string { 
+  // starting from offset search for the end of the line using "\r\n"
+  const end = input.indexOf("\r\n", cursor.offset, "ascii")
+  if (end === -1) { 
+    throw new SyntaxError("incomplete RESP line")
   }
 
-  return parts[0];
+  // save line from offset to the end as string 
+  const line = input.toString("utf8", cursor.offset, end);
+  cursor.offset = end + 2;                       // +2 to skip \r\n
+
+  return line;
 }
 
-export function parse(input: string): (string | null)[] | RespValue{
-  const parts = input.split("\r\n");
-
-  // trailing \r\n check for existence
-  if (parts[parts.length - 1] !== "") {
-    throw new SyntaxError("RESP must end with \\r\\n");
+// for handling the parsing of value pointed to by pointer
+function parseValue(input:Buffer, cursor: Cursor): RespValue { 
+  // get the value at pointer (will mostly be just the marker for datatype)
+  const marker = input[cursor.offset]; 
+  if (marker === undefined) {
+    throw new SyntaxError("incomplete RESP value");
   }
+  // move pointer to the next
+  cursor.offset += 1;
 
-  // for satifying noUncheckedIndexedAccess
-  if (parts[0] === undefined) { 
-    throw new SyntaxError("invalid input")
-  }
-
-  // in case the first part does not define an arr 
-  if (!parts[0]?.startsWith("*")) { 
-    // first part is the defines datatype 
-    const dt = parts[0].slice(0,1);
-    const arg = parts[0].slice(1);
-    
-    switch (dt) { 
-      // simple string 
-      case '+': 
-        if (parts.length !== 2) {
-          throw new SyntaxError("unexpected data after RESP value");
-        }
-        return arg; 
-      // errors
-      case '-':
-        if (parts.length !== 2) {
-          throw new SyntaxError("unexpected data after RESP value");
-        }
-        return new Error(arg); 
-      // integers
-      case ':':
-        if (parts.length !== 2) {
-          throw new SyntaxError("unexpected data after RESP value");
-        }
-        return parseInteger(arg, "integer");
-      // bulk string 
-      case '$': {
-        const text = parseBulkString(parts);
-        if ((parts.length !== 2 && text !== null) || (parts.length !== 1 && text === null)) {
-          throw new SyntaxError("unexpected data after RESP value");
-        } 
-        return text;
-      }
-      default: 
-        throw new SyntaxError(`unsupported RESP element type: ${dt}`);
+  switch(marker) { 
+    // + 
+    case 43: { 
+      return readLine(input, cursor);
     }
-  }
-
-  // array case
-  const msg: RespValue[] = [];
-  const arrSize = parseInteger(parts[0].slice(1), "array size"); 
-  parts.shift();
-
-  if (arrSize === -1) { 
-    return null 
-  }
-
-  if (arrSize < 0) {
-    throw new SyntaxError(`invalid length`)
-  }
-
-  for (let i = 0; i < arrSize; i++) { 
-    // check before extracting
-    if (parts[0] === undefined) { 
-      throw new SyntaxError("invalid input")
+    // - 
+    case 45: { 
+      return new Error(readLine(input, cursor)); 
     }
-
-    // first part is the defines datatype 
-    const dt = parts[0].slice(0,1);
-    
-    switch (dt) { 
-      // technically supported but very rare 
-      case '+': {
-        const temp = parts[0].slice(1);
-        msg.push(temp);
-
-        // shift removes the next item so when it is null nothing should be shifted
-        if (temp !== null) {
-          parts.shift();
-        }
-        break;
-      }
-      case '-': { 
-        const temp = new Error(parts[0].slice(1));
-        msg.push(temp);
-
-        // shift removes the next item so when it is null nothing should be shifted
-        if (temp !== null) {
-          parts.shift();
-        }
-        break;
-      }
-      case ':': {
-        const temp = parseInteger(parts[0].slice(1));
-        msg.push(temp);
-
-        // shift removes the next item so when it is null nothing should be shifted
-        if (temp !== null) {
-          parts.shift();
-        }
-        break;
-
-      }
-      // case '*': {}
-      case '$': {
-        const temp = parseBulkString(parts);
-        msg.push(temp);
-
-        // shift removes the next item so when it is null nothing should be shifted
-        if (temp !== null) {
-          parts.shift();
-        }
-        
-        break;
-      }
-      default: 
-        throw new SyntaxError(`unsupported RESP element type: ${dt}`);
+    // : 
+    case 58: { 
+      return parseInteger(readLine(input, cursor), "integer");
     }
-  }
+    // $
+    case 36: { 
+      const length = parseInteger(readLine(input, cursor), "bulk string length");
 
-  // small check after array loop for trailing \r\n
-  if (parts.length !== 1) {
-    throw new SyntaxError("unexpected data after the array");
-  }
+      if (length === -1) {
+        return null; 
+      }
 
-  return msg; 
+      // checking the length of input 
+      // note: +2 for trailing \r\n 
+      if (length < 0 || cursor.offset + length + 2 > input.length) { 
+        throw new SyntaxError("invalid or incomplete bulk string")
+      }
+
+      // verify if the \r\n 
+      // note: cannot use readLine here since bulkstring can include its own literal \r\n somewhere so better to use the length to verify end instead
+      const end = cursor.offset + length; 
+      if (input[end] !== 13 || input[end + 1] !== 10) {   // 13 = \r, 10 = \n
+        throw new SyntaxError("bulk string is missing its trailing CRLF");
+      }
+      const value = input.toString("utf8", cursor.offset, end);
+      cursor.offset = end + 2;                   // skip the body and its CRLF
+      return value;
+    } 
+    // *  
+    case 42: { 
+      const length = parseInteger(readLine(input, cursor), "array length")
+
+      if (length === -1) { 
+        return null; 
+      }
+
+      if (length < 0) {
+        throw new SyntaxError("invalid or incomplete array length");
+      }
+
+      // recursively parse into an array
+      const values: RespValue[] = []
+      for (let i = 0; i < length; i += 1) { 
+        values.push(parseValue(input, cursor))
+      }
+
+      return values;
+    }
+    default:
+      throw new SyntaxError(`unsupported RESP type marker: ${String.fromCharCode(marker)}`,
+    );
+  }
 }
 
+// parser function for processing input into understandable pieces for command handling  
+export function parse(input: string | Buffer): RespValue{
+  const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"); 
+  const cursor = { offset: 0};               
+
+  const value = parseValue(buffer, cursor);
+
+  // everything must be consumed, otherwise there's extra data after the value
+  if (cursor.offset !== buffer.length) {
+    throw new SyntaxError("unexpected data after RESP value");
+  }
+
+  return value;
+}
+
+// 
 export function serialize(data: string | number | SimpleString | null | Error ):string { 
   // null case
   if (data === null) { 
