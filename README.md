@@ -42,9 +42,9 @@ Measured with `redis-benchmark -t set,get -n 100000 -q` against the local server
 
 | Version                  | SET (req/s) | GET (req/s) | p50 (ms)        |
 | ------------------------ | ----------- | ----------- | --------------- |
-| Before async changes     | `<fill in>` | `<fill in>` | `<fill in>`     |
+| Before async changes     |             |             |                 |
 | After async changes      | 55,772      | 64,062      | 0.823 / 0.783   |
-| Real Redis (same machine)| `<fill in>` | `<fill in>` | `<fill in>`     |
+| Real Redis (same machine)|             |             |                 |
 
 The `WARNING: Could not fetch server CONFIG` line is expected: the benchmark tool asks for server settings through `CONFIG`, which isn't implemented here. It doesn't affect the results.
 
