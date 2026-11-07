@@ -193,6 +193,7 @@ export class Store {
             value,
             ...(expiresAt !== undefined ? { expiresAt } : {}),
         });
+
     }
 
     get(key: string): string | undefined {
@@ -214,8 +215,6 @@ export class Store {
     lpush(key: string, values: string[]): number {
         return this.adjustList(key, values, "l")
     }
-
-    // TODO lrange could be nice here 
     
     rpush(key: string, values: string[]): number {
         return this.adjustList(key, values, "r")

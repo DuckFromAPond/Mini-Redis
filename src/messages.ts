@@ -17,7 +17,7 @@ function isCommandArray(value: unknown): value is (string | null)[] {
 }
 
 // message = the whole user input (a litle too late to rename for better clarity) 
-export function handleMessages(input: string | Buffer, store: Store): string | Promise<string> { 
+export function handleMessages(input: string | Buffer, store: Store): string | Promise<string> {
     try {
         const parsedMsg = parse(input);
 

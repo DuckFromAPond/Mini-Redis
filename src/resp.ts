@@ -131,7 +131,7 @@ export function parse(input: string | Buffer): RespValue{
   return value;
 }
 
-// 
+// serialize the response 
 export function serialize(data: string | number | SimpleString | null | Error ):string { 
   // null case
   if (data === null) { 
