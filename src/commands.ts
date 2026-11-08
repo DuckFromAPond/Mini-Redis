@@ -3,7 +3,7 @@ import { Store } from "@/src/store.js";
 import { SimpleString, parseInteger } from "@/src/resp.js";
 
 // commandResult holds all possible return type 
-type CommandResult = string | number | SimpleString | null | Error;
+type CommandResult = string | number | SimpleString | null | Error | string[];
 
 // for response part of the map (takes args and curr store as input) 
 // note: Promise<commandResult> here for save since that is async (otherwise all other commands are not async)
@@ -212,6 +212,28 @@ const handlers = new Map<string, Handler>([
         }
 
         return store.lpush(key, values)
+    }],
+
+    ["LRANGE", (args, store) => {
+        // nothing passed in 
+        if (args.length !== 3) { 
+            throw new Error ("invalid number of arguments passed in")
+        }
+
+        const [key, start, stop] = args;
+        if (key === undefined || key === null) { 
+            throw Error("invalid key value"); 
+        }  
+
+        if (start === undefined || start === null) { 
+            throw Error("invalid start"); 
+        }   
+
+        if (stop === undefined || stop === null) { 
+            throw Error("invalid stop value"); 
+        }  
+
+        return store.lrange(key, parseInteger(start), parseInteger(stop));
     }],
 
     ["RPUSH", (args, store) => {

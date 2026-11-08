@@ -2,6 +2,7 @@
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { count } from "node:console";
 
 
 // entry can either be a list or a string 
@@ -215,7 +216,37 @@ export class Store {
     lpush(key: string, values: string[]): number {
         return this.adjustList(key, values, "l")
     }
-    
+
+    lrange(key: string, start: number, stop: number): string[] {
+        const entry = this.getLiveEntry(key);
+
+        if (entry === undefined) {
+            return [];                
+        }
+        if (entry.type !== "list") {
+            throw new Error("WRONGTYPE Operation against a key holding the wrong kind of value");
+        }
+
+        const length = entry.value.length;
+
+        // negative indexes count from the tail
+        let from = start < 0 ? length + start : start;
+        let to = stop < 0 ? length + stop : stop;
+
+        
+        if (from < 0) {
+            from = 0;
+        }
+        if (to >= length) {
+            to = length - 1;
+        }
+
+        // nothing left between them
+        if (from > to) return [];
+
+        return entry.value.slice(from, to + 1);   
+    }
+
     rpush(key: string, values: string[]): number {
         return this.adjustList(key, values, "r")
     }

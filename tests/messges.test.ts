@@ -81,3 +81,9 @@ test('INCR & DECR command', () => {
     expect(handleMessages("*2\r\n$4\r\ndecr\r\n$5\r\ncount\r\n", store)).toEqual(":1\r\n")
     expect(handleMessages("*2\r\n$4\r\ndecr\r\n$5\r\nprice\r\n", store)).toEqual(":-1\r\n")
 })
+
+test("RPUSH then LRANGE with a negative stop", () => {
+    const store = new Store();
+    expect(handleMessages("*7\r\n$5\r\nrpush\r\n$1\r\nl\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n", store)).toEqual(":5\r\n");
+    expect(handleMessages("*4\r\n$6\r\nlrange\r\n$1\r\nl\r\n$1\r\n1\r\n$2\r\n-2\r\n", store)).toEqual("*3\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n");
+})

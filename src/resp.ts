@@ -132,7 +132,7 @@ export function parse(input: string | Buffer): RespValue{
 }
 
 // serialize the response 
-export function serialize(data: string | number | SimpleString | null | Error ):string { 
+export function serialize(data: string | number | SimpleString | null | Error | string[]):string { 
   // null case
   if (data === null) { 
     return "$-1\r\n"; 
@@ -140,6 +140,11 @@ export function serialize(data: string | number | SimpleString | null | Error ):
 
   if (data instanceof Error) {
     return `-ERR ${data.message}\r\n`;
+  }
+
+  if (Array.isArray(data)) {
+    const items = data.map((item) => serialize(item)).join("");
+    return `*${data.length}\r\n${items}`;
   }
 
   // simple string 
