@@ -1,7 +1,46 @@
 # Mini-Redis
 
-A small Redis clone written in TypeScript, built to learn how Redis works: its wire protocol (RESP) and how a server turns bytes from a socket into commands and replies. It follows the Coding Challenges "Build Your Own Redis Server" challenge and Redis's documentation.
+A from-scratch implementation of a subset of Redis in TypeScript, built to learn the RESP protocol and how a server turns socket bytes into commands and replies.
 
+## Try it out 
+
+Requires Node.js (a recent version) and, to try the server, `redis-cli` (it comes with Redis).
+
+```bash
+git clone https://github.com/DuckFromAPond/Mini-Redis
+cd Mini-Redis
+npm install
+npm start
+```
+
+The server listens on port `6379`, the default Redis port. If a real Redis is already running there, stop it first or start this server on another port (`startServer(port)`, see `src/server.ts`).
+
+In a second terminal:
+
+```bash
+redis-cli PING
+# PONG
+redis-cli SET drink coffee
+# OK
+redis-cli GET drink
+# "coffee"
+```
+
+Other scripts:
+
+```bash
+npm run dev    # restart the server automatically when files change
+npm test       # run the test suite
+```
+
+`SAVE` writes a snapshot to `dump.json` in the directory where you started the server, and the server loads it again on startup.
+
+## Built with
+
+- **Language and runtime:** [TypeScript](https://www.typescriptlang.org/) on [Node.js](https://nodejs.org/), using only built-in modules for the server (`node:net`, `node:fs`). No runtime dependencies.
+- **Development:** [tsx](https://tsx.is/) to run TypeScript directly (`npm start`, `npm run dev`).
+- **Testing:** [Vitest](https://vitest.dev/) for unit and integration tests (`npm test`), and [ioredis](https://github.com/redis/ioredis) as a real client for the connection tests.
+- **Manual testing and benchmarking:** `redis-cli` and `redis-benchmark`, which come with Redis.
 ## Command list
 | Command | Syntax                                              | Description                                       | Example                      |
 | ------- | --------------------------------------------------- | ------------------------------------------------- | ---------------------------- |
@@ -14,6 +53,7 @@ A small Redis clone written in TypeScript, built to learn how Redis works: its w
 | INCR    | `INCR key`                                          | Add one to a stored integer                       | `INCR counter`               |
 | DECR    | `DECR key`                                          | Subtract one from a stored integer                | `DECR counter`               |
 | LPUSH   | `LPUSH key value [value ...]`                       | Push values onto the head of a list               | `LPUSH jobs a b`             |
+| LRANGE  | `LRANGE key start stop`                             | Print values between given start and stop index from a given list | `LRANGE jobs 0 3`            |
 | RPUSH   | `RPUSH key value [value ...]`                       | Push values onto the tail of a list               | `RPUSH jobs a b`             |
 | SAVE    | `SAVE`                                              | Write a snapshot to disk                          | `SAVE`                       |
 
@@ -67,12 +107,12 @@ NOTE: It is noticed that making the normal commands asynchronous with SAVE cause
 
 Measured with `redis-benchmark -t set,get -n 100000 -q` against the local server, on the same machine as real Redis. Rows with a range come from several runs; the others are a single run.
 
-| Version                              | SET (req/s)       | GET (req/s)       | p50 SET / GET (ms) |
-| ------------------------------------ | ----------------- | ----------------- | ------------------ |
-| Before async changes (`split`/`shift` parser, all sync) | 76,336 | 80,451 | 0.559 / 0.543 |
-| After async changes (every command async) | 55,772       | 64,062            | 0.823 / 0.783      |
-| Partial async + pointer (only `SAVE` async, cursor parser) | 72,727 | 80,321 | 0.735 / 0.655 |
-| Real Redis (same machine)            | 141,844 | 141,443 | 0.183             |
+| Version                                                   | SET (req/s)       | GET (req/s)       | p50 SET / GET (ms) |
+| --------------------------------------------------------- | ----------------- | ----------------- | ------------------ |
+| Before async changes (`split`/`shift` parser, all sync)   | 76,336            | 80,451            | 0.559              |
+| After async changes (every command async)                 | 55,772            | 64,062            | 0.823              |
+| Partial async + pointer (only `SAVE` async, cursor parser)| 72,727            | 80,321            | 0.735              |
+| Real Redis (same machine)                                 | 141,844           | 141,443           | 0.183              |
 
 The `WARNING: Could not fetch server CONFIG` line is expected: the benchmark tool asks for server settings through `CONFIG`, which isn't implemented here. It doesn't affect the results.
 
