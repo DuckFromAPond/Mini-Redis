@@ -13,7 +13,13 @@ npm install
 npm start
 ```
 
-The server listens on port `6379`, the default Redis port. If a real Redis is already running there, stop it first or start this server on another port (`startServer(port)`, see `src/server.ts`).
+The server listens on port `6379`, the default Redis port. If a real Redis is already running there, stop it first or start this server on another port (`startServer(port)`, see `src/server.ts`). 
+
+```bash
+npm start              # port 6379 (default)
+npm start -- 7000      # custom port
+redis-cli -p 7000 PING
+```
 
 In a second terminal:
 
@@ -105,47 +111,79 @@ NOTE: It is noticed that making the normal commands asynchronous with SAVE cause
 
 ## Performance
 
-Measured with `redis-benchmark -t set,get -n 100000 -q` against the local server, on the same machine as real Redis. Rows with a range come from several runs; the others are a single run.
+Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,get -n 100000 -q`; pipelined runs use `redis-benchmark -t set,get -n 100000 -P 16 -q` for Redis and `redis-benchmark -t set,get -n 500000 -P 16 -q` for Mini-Redis. Results vary with machine load. Benchmarks are ran 3 times, the table reports the median rather than a range.
 
-| Version                                                   | SET (req/s)       | GET (req/s)       | p50 SET / GET (ms) |
-| --------------------------------------------------------- | ----------------- | ----------------- | ------------------ |
-| Before async changes (`split`/`shift` parser, all sync)   | 76,336            | 80,451            | 0.559              |
-| After async changes (every command async)                 | 55,772            | 64,062            | 0.823              |
-| Partial async + pointer (only `SAVE` async, cursor parser)| 72,727            | 80,321            | 0.735              |
-| Real Redis (same machine)                                 | 141,844           | 141,443           | 0.183              |
+#### Plain requests (default pipeline depth)
+
+| Version                                                    | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
+| ---------------------------------------------------------- | ---------- | ---------- | ------------ | ------------ |
+| Before async changes (`split`/`shift` parser, all sync)    | 76,336     | 80,451     | 0.559        | 0.559        |
+| After async changes (every command async)                  | 55,772     | 64,062     | 0.823        | 0.823        |
+| Partial async + pointer (only `SAVE` async, cursor parser) | 72,727     | 80,321     | 0.735        | 0.735        |
+| Real Redis                                                 | 113,765    | 112,612    | 0.183        | 0.183        |
+| Latest Mini-Redis, plain                                   | 99,800     | 101,626    | 0.439        | 0.439        |
+
+For the older historical plain rows, the original notes recorded one p50 value per run rather than separate SET and GET latencies. That value is repeated in both columns as a rough estimate; the latest plain Mini-Redis and all pipelined rows have separate SET/GET p50 measurements.
+
+#### Pipelined requests (`-P 16`)
+
+| Version                            | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
+| ---------------------------------- | ---------- | ---------- | ------------ | ------------ |
+| Real Redis                         | 877,193    | 1,176,471  | 0.735        | 0.575        |
+| Mini-Redis, before batch fast path | 214,041    | 243,902    | 3.527        | 3.135        |
+| Mini-Redis, with batch fast path   | 406,835    | 436,300    | 1.927        | 1.887        |
+
+Plain and pipelined results use different workloads and should not be compared directly. Redis and Mini-Redis pipelined runs used different request counts; treat their results as indicative rather than a controlled head-to-head benchmark. The before/after Mini-Redis pipelined figures are single runs, not multi-run averages.
 
 The `WARNING: Could not fetch server CONFIG` line is expected: the benchmark tool asks for server settings through `CONFIG`, which isn't implemented here. It doesn't affect the results.
 
 ### What the numbers show
 
 - **Making every command async cost the most.** Throughput dropped by roughly 27% for SET and 20% for GET. Ordinary commands were already cheap, so the extra scheduling per request became a large share of the work.
-- **Keeping ordinary commands synchronous recovered most of it.** Only `SAVE` is async now, and GET is back to about its original speed. SET is within roughly 5 to 7% of the original.
-- **The cursor parser was a correctness change, not a speed change.** It was added so that values containing `\r\n`, multibyte text and nested arrays parse correctly, and it changed throughput very little.
-- **The server reaches about half of real Redis's SET throughput and about 57% of its GET throughput,** with p50 latency about 3.5 to 4 times higher. Real Redis is C; this is single-threaded Node.
+- **Keeping ordinary commands synchronous recovered most of it.** Only `SAVE` is async now.
+- **Pipelining reduced per-command socket overhead.** With `-P 16`, the server can process multiple commands received together and combine their replies into one socket write, rather than doing a separate read/response/write cycle for each command.
+- **The command-batch fast path improved pipelined throughput further.** Compared with the prior pipelined run, SET throughput rose about 1.9x and GET about 1.8x. It specializes parsing for the common command frame—an array of bulk-string arguments—while other RESP shapes still use the general parser.
+- **The latest plain run median is about 99.8k SET and 101.6k GET requests per second.** These are newer measurements than the earlier plain rows; differences between individual benchmark sessions may include machine load as well as code changes.
 
 ### Profiling
 
-A CPU profile (`node --cpu-prof`) taken during a 500,000-request benchmark showed:
+A CPU profile (`node --cpu-prof`) during a 500,000-request plain benchmark initially showed about 75% of profile time in the socket write path (`writeUtf8String` alone was about 70% self time) and about 17% in parsing. This indicated that reducing parser work alone would have limited impact, while batching commands could reduce socket-write overhead.
 
-| Share of profile | What                                               |
-| ---------------- | -------------------------------------------------- |
-| ~75%             | Writing replies to the socket (`writeUtf8String` alone is ~70% self time) |
-| ~17%             | `parse` (about 10% of the profile is in `readLine`) |
-| ~3%              | Command handlers, store and `serialize` combined   |
-| ~2%              | Node's socket read path                            |
+After adding pipelined command handling and the specialized batch parser, a profile of the optimized `-P 16` run showed a different distribution:
 
-aptured with `node --cpu-prof` during `redis-benchmark -t set,get -n 500000 -q`. The profiler slows the process down, so these are proportions, not exact figures.
+| Profile function       | Total time | Self time |
+| ---------------------- | ---------- | --------- |
+| `writeUtf8String`      | ~45%       | ~42%      |
+| `utf8Slice`            | ~12%       | ~11%      |
+| `handleMessages`       | ~39%       | ~5.6%     |
+| `parseCommandBatch`    | ~22%       | ~4.3%     |
+| `handleCommands`       | ~7.4%      | ~4.5%     |
 
-**Takeaway:** with one request and one reply at a time, the benchmark is dominated by the cost of one socket write per reply. Optimizing the parser or command layer can only recover a small part of the total, which matches the small effect of the cursor rewrite. The most direct way to reduce write cost is to write fewer times, so the next planned change is pipelining: parse every command in a chunk and send all the replies with a single `write`.
+The total-time percentages overlap because profiler entries include time spent in their child calls; self-time percentages are the non-overlapping portion. Profiling adds overhead, so treat these as proportions rather than exact costs.
+
+**What led to the improvement:** the initial profile identified socket writes as the main cost for individual requests. Pipelining amortized that work across commands by parsing a batch and writing combined replies. Profiling then showed parsing of the common RESP command shape was a remaining opportunity, so `parseCommandBatch` was added to scan bulk-string arrays directly from the input buffer, avoiding some general-parser work and intermediate conversions. The optimized profile still shows socket writing and UTF-8 conversion as significant costs, so further tuning should be guided by repeated benchmarks and profiles.
+
+#### Why parseCommandBatch helps
+
+The general parser (`parse`) handles every RESP type. It reads each line by searching for `\r\n` (`Buffer.indexOf`), turns the line into a string, checks it with a regex and converts it with `Number()`. Nearly every client command has one shape, though: an array of bulk strings, such as `*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n`. For that shape, four of the seven lines are only length headers (`*3`, `$3`, ...) made of digits.
+
+`parseCommandBatch` handles only that shape and works directly on the bytes:
+
+- **Length headers are read as numbers byte by byte** (`readAsciiInteger`), so there is no `indexOf` call, no temporary string, no regex and no `Number()` for them. The profile before this change showed those costs under `indexOfBuffer`, `utf8Slice`, `toString` and `parseInteger`.
+- **Only the argument values become strings,** which the command handlers need anyway.
+- **It loops over the whole chunk** and builds the final `string[][]` that `handleCommands` expects, without recursion or an intermediate `RespValue` structure.
+- **Anything else returns `undefined`** and falls back to the general parser, so unusual input behaves as before.
+
+In the `-P 16` profile, parsing fell from about 47% of the time to about 22%. Socket writing now takes a larger *share* (about 45%, up from about 33%), but that's because the rest of the profile shrank, not because writing got slower.
+
+**Trade-off:** there are now two parsers that must agree on every input they both accept. Tests compare the fast path against the general parser on the same inputs to keep them consistent.
 
 ## Future improvements
 
-- Handle several commands arriving in one network chunk (pipelining) + add support for adding client info
-- Log system to work with the snapshots save 
 - Handle a command split across several chunks
+- Log system to work with the snapshots save 
 - Argument-count errors for `GET` and `SET`
 - Inline commands (plain text like `PING`, without the array form)
-- Nested arrays in the parser
 - RESP3 support ( `HELLO 3` handshake and the extra types)
 
 ## Credits

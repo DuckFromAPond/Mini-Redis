@@ -87,3 +87,8 @@ test("RPUSH then LRANGE with a negative stop", () => {
     expect(handleMessages("*7\r\n$5\r\nrpush\r\n$1\r\nl\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n", store)).toEqual(":5\r\n");
     expect(handleMessages("*4\r\n$6\r\nlrange\r\n$1\r\nl\r\n$1\r\n1\r\n$2\r\n-2\r\n", store)).toEqual("*3\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n");
 })
+
+test("two PINGs in one chunk -> two replies in order", () => {
+    const store = new Store();
+    expect(handleMessages("*1\r\n$4\r\nPING\r\n*1\r\n$4\r\nPING\r\n", store)).toEqual("+PONG\r\n+PONG\r\n");
+})

@@ -89,7 +89,7 @@ function parseValue(input:Buffer, cursor: Cursor): RespValue {
       cursor.offset = end + 2;                   // skip the body and its CRLF
       return value;
     } 
-    // *  
+    // *
     case 42: { 
       const length = parseInteger(readLine(input, cursor), "array length")
 
@@ -116,19 +116,142 @@ function parseValue(input:Buffer, cursor: Cursor): RespValue {
 }
 
 // parser function for processing input into understandable pieces for command handling  
-export function parse(input: string | Buffer): RespValue{
+export function parse(input: string | Buffer): RespValue[] {
   // reuse buffer if already exist 
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"); 
-  const cursor = { offset: 0};               
+  const cursor: Cursor = { offset: 0 };               
 
-  const value = parseValue(buffer, cursor);
+  const values: RespValue[] = []
 
-  // everything must be consumed, otherwise there's extra data after the value
-  if (cursor.offset !== buffer.length) {
-    throw new SyntaxError("unexpected data after RESP value");
+  // go through entire input and parse it into a list
+  while (cursor.offset < buffer.length) {
+    values.push(parseValue(buffer, cursor));
+  }
+  
+  return values;
+}
+
+// read a number straight from the bytes
+function readAsciiInteger(input: Buffer, cursor: Cursor, description: string): number {
+  let negative = false;
+
+  // 45 = "-" so remember that it is negative number
+  if (input[cursor.offset] === 45) {
+    negative = true;
+    cursor.offset += 1;
   }
 
-  return value;
+  const digitsStart = cursor.offset;
+  let value = 0;
+  // loop through input
+  while (cursor.offset < input.length) {
+    // note: ! tells compiler that the value at offset cannot be undef or null 
+    const byte = input[cursor.offset]!;
+    // end if no number is found
+    if (byte < 48 || byte > 57) {
+      break;
+    }
+
+    // convert byte to number and adds to prev value
+    value = value * 10 + byte - 48;
+    if (value > Number.MAX_SAFE_INTEGER) {
+      throw new SyntaxError(`incorrect ${description} value`);
+    }
+
+    cursor.offset += 1;
+  }
+
+  // if no digit at all then throw err 
+  if (cursor.offset === digitsStart) {
+    throw new SyntaxError(`invalid ${description} value`);
+  }
+
+  // requires both \r\n and not just \r or else throw error 
+  if (input[cursor.offset] !== 13 || input[cursor.offset + 1] !== 10) {
+    if (cursor.offset >= input.length || input[cursor.offset] === 13) {
+      throw new SyntaxError("incomplete RESP line");
+    }
+    throw new SyntaxError(`invalid ${description} value`);
+  }
+
+  cursor.offset += 2;
+  const parsed = negative ? -value : value;
+  if (!Number.isSafeInteger(parsed)) {
+    throw new SyntaxError(`incorrect ${description} value`);
+  }
+
+  return parsed;
+}
+
+// specialized parser for handling command-array (anything that has * as the first byte) <- pretty much every commands 
+export function parseCommandBatch(input: string | Buffer): (string | null)[][] | undefined {
+  // reuse buffer if exist else use a new one
+  const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8");
+  if (buffer.length === 0) {
+    return undefined;
+  }
+
+  const cursor: Cursor = { offset: 0 };
+  // for holding list of commands (one entry per command) received from the same chunk
+  const commands: (string | null)[][] = [];
+
+  // loop through input 
+  while (cursor.offset < buffer.length) {
+    // if the first byte is not "*" then don't run this func and let parse handle it instead 
+    if (buffer[cursor.offset] !== 42) {
+      return undefined;
+    }
+
+    cursor.offset += 1;
+
+    // get the arr length by converting the ascii to int
+    const count = readAsciiInteger(buffer, cursor, "array length");
+    if (count === -1) {
+      return undefined;
+    }
+    if (count < 0) {
+      throw new SyntaxError("invalid or incomplete array length");
+    }
+
+    const args: (string | null)[] = [];
+    // loop through the input and save each arguments into an arr before pushing the full onto commands
+    // assumes the rest of the type from here is a bulk string "$"
+    for (let i = 0; i < count; i += 1) {
+      // the command/args must be bulk string "$" else it breaks and it parse handles it instead
+      if (buffer[cursor.offset] !== 36) {
+        return undefined;
+      }
+      cursor.offset += 1;
+
+      // compare length of string
+      const length = readAsciiInteger(buffer, cursor, "bulk string length");
+      if (length === -1) {
+        args.push(null);
+        continue;
+      }
+      if (length < 0) {
+        throw new SyntaxError("invalid or incomplete bulk string");
+      }
+
+      // check "\r\n" existence
+      const end = cursor.offset + length;
+      if (end + 2 > buffer.length) {
+        throw new SyntaxError("invalid or incomplete bulk string");
+      }
+      if (buffer[end] !== 13 || buffer[end + 1] !== 10) {
+        throw new SyntaxError("bulk string is missing its trailing CRLF");
+      }
+
+      // save arguments
+      args.push(buffer.toString("utf8", cursor.offset, end));
+      cursor.offset = end + 2;
+    }
+
+    // save all parsed arg to the main list 
+    commands.push(args);
+  }
+
+  return commands;
 }
 
 // serialize the response 

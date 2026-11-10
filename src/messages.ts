@@ -1,6 +1,8 @@
-import { parse, serialize } from "@/src/resp.js";
+import { parse, parseCommandBatch, serialize } from "@/src/resp.js";
 import { handleCommands } from "@/src/commands.js";
 import { Store } from "@/src/store.js";
+
+type RespValue = string | number | null | Error | RespValue[];
 
 function serializeError(error: unknown): string {
     // transform the throws into the error message 
@@ -18,27 +20,44 @@ function isCommandArray(value: unknown): value is (string | null)[] {
 
 // message = the whole user input (a litle too late to rename for better clarity) 
 export function handleMessages(input: string | Buffer, store: Store): string | Promise<string> {
-    try {
-        const parsedMsg = parse(input);
-
-        if (!Array.isArray(parsedMsg)) {
-            return serialize(new Error("expected an array"));
-        }
-
-        // the parser allows the rest RESP type in array but I don't know what to do with them 
-        // most of the input will be entered and parsed as a bulk string even if it is an int or something else anyways
-        if (!isCommandArray(parsedMsg)) {
-            return serialize(new Error("command arguments must be strings or null"));
-        }
-
-        const commandMsg = handleCommands(parsedMsg, store);
-        // if the command is a async command (save), then serialize after the aync work is resolved 
-        if (commandMsg instanceof Promise) {
-            return commandMsg.then(serialize).catch(serializeError);
-        }
-
-        return serialize(commandMsg);
-    } catch (err){ 
+    let values: RespValue[]; 
+    try { 
+        // use a specialized parser for the command-array format produced by Redis clients (since mostly every commands follow the pattern of starting with * with $)
+        // parse is now a fallback for unrecognizable commands
+        values = parseCommandBatch(input) ?? parse(input);
+    } catch (err) { 
         return serializeError(err);
-    }    
+    }
+
+    // run through each parsed input 
+    const responses = values.map((value) => {
+        try { 
+            if (!Array.isArray(value)) {
+                return serialize(new Error("expected an array"));
+            }
+
+            // the parser allows the rest RESP type in array but I don't know what to do with them 
+            // most of the input will be entered and parsed as a bulk string even if it is an int or something else anyways
+            if (!isCommandArray(value)) {
+                return serialize(new Error("command arguments must be strings or null"));
+            }
+
+            const result = handleCommands(value, store);
+            if (result instanceof Promise) {
+                return result.then(serialize).catch(serializeError);
+            }
+
+            return serialize(result)
+        } catch (err) { 
+            return serializeError(err)
+        }
+    })
+    
+
+    // if the command is a async command (save), then serialize after the aync work is resolved 
+    if (responses.some((r) => r instanceof Promise)) {
+        return Promise.all(responses).then((all) => all.join(""));
+    }
+
+    return (responses as string[]).join("");
 }
