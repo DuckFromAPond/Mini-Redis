@@ -142,7 +142,7 @@ The `WARNING: Could not fetch server CONFIG` line is expected: the benchmark too
 - **Making every command async cost the most.** Throughput dropped by roughly 27% for SET and 20% for GET. Ordinary commands were already cheap, so the extra scheduling per request became a large share of the work.
 - **Keeping ordinary commands synchronous recovered most of it.** Only `SAVE` is async now.
 - **Pipelining reduced per-command socket overhead.** With `-P 16`, the server can process multiple commands received together and combine their replies into one socket write, rather than doing a separate read/response/write cycle for each command.
-- **The command-batch fast path improved pipelined throughput further.** Compared with the prior pipelined run, SET throughput rose about 1.9x and GET about 1.8x. It specializes parsing for the common command frame—an array of bulk-string arguments—while other RESP shapes still use the general parser.
+- **The command-batch fast path improved pipelined throughput further.** Compared with the prior pipelined run, SET throughput rose about 1.9x and GET about 1.8x. It specializes parsing for the common command frame (an array of bulk-string arguments) while other RESP shapes still use the general parser.
 - **The latest plain run median is about 99.8k SET and 101.6k GET requests per second.** These are newer measurements than the earlier plain rows; differences between individual benchmark sessions may include machine load as well as code changes.
 
 ### Profiling
