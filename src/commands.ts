@@ -2,6 +2,12 @@
 import { Store } from "@/src/store.js";
 import { SimpleString, parseInteger } from "@/src/resp.js";
 
+// configs for redis-benchmark :p 
+const CONFIGVALUES = new Map<string, string>([
+  ["save", ""],
+  ["appendonly", "no"],
+]);
+
 // commandResult holds all possible return type 
 type CommandResult = string | number | SimpleString | null | Error | string[];
 
@@ -268,6 +274,30 @@ const handlers = new Map<string, Handler>([
         await store.save();
         return new SimpleString("OK");
     }],
+
+    ["CONFIG", (args) => {  
+        if (args.length !== 2) { 
+            throw new Error("wrong number of arguments given")
+        }
+
+        const [command, key] = args;
+
+        if (command === undefined || command === null) { 
+            throw new Error("wrong number of arguments for CONFIG commands")
+        }
+
+        if (command.toUpperCase() !== "GET") { 
+            throw new Error(`unsupported CONFIG command ${key}`)
+        }
+        
+        if (key === undefined || key === null) { 
+            throw new Error("invalid arguments given")
+        }
+
+        const configValue = CONFIGVALUES.get(key);
+        
+        return configValue === undefined ? [] : [key, configValue];
+    }]
 ])
 
 export function handleCommands(

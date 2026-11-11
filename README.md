@@ -111,9 +111,12 @@ NOTE: It is noticed that making the normal commands asynchronous with SAVE cause
 
 ## Performance
 
-Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,get -n 100000 -q`; pipelined runs use `redis-benchmark -t set,get -n 500000 -P 16 -q` for both Redis and Mini-Redis. Results vary with machine load. Benchmarks were ran 3 times, the table reports the median rather than a range (though the range isn't that wide anyway - around 10,000 at worst). It should also be noted that previous versions of the Mini-redis are recorded at different times in development and as such may be under different condition though they are recorded on the **same machine**. Both Real Redis and the Latest Mini-Redis are recorded after one another and their data below are the most recent recordings. 
+Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,get -n 100000 -q`; pipelined runs use `redis-benchmark -t set,get -n 500000 -P 16 -q` for both Redis and Mini-Redis. Results vary with machine load. Benchmarks were ran 3 times, the table reports the median rather than a range (though the range isn't that wide anyway - around 10,000 at worst). 
 
-#### Plain requests (default pipeline depth)
+
+It should also be noted that previous versions of the Mini-redis are recorded at different times in development and as such may be under different condition though they are recorded on the **same machine**. Both Real Redis and the Latest Mini-Redis version are recorded after one another and their data below are the most recent recordings. 
+
+#### Plain requests (100,000 requests, default pipeline depth)
 
 | Version                                                    | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
 | ---------------------------------------------------------- | ---------- | ---------- | ------------ | ------------ |
@@ -123,17 +126,13 @@ Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,
 | Real Redis                                                 | 140,449    | 140,845    | 0.183        | 0.183        |
 | Latest Mini-Redis, plain                                   | 129,032    | 131,926    | 0.351        | 0.351        |
 
-#### Pipelined requests (`-P 16`)
+#### Pipelined requests (500,000 requests, `-P 16` / batch of 16 commands per network packet)
 
 | Version                            | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
 | ---------------------------------- | ---------- | ---------- | ------------ | ------------ |
 | Real Redis                         | 1,213,592  | 1,506,024  | 0.591        | 0.463        |
 | Mini-Redis, before batch fast path | 214,041    | 243,902    | 3.527        | 3.135        |
 | (Latest) Mini-Redis, with batch fast path   | 582,750    | 616,522    | 1.471        | 1.407        |
-
-Plain and pipelined results use different workloads and should not be compared directly. Redis and Mini-Redis pipelined runs used different request counts; treat their results as indicative rather than a controlled head-to-head benchmark. 
-
-**NOTE**: It is noticed that 
 
 ### What the numbers show
 
@@ -174,11 +173,11 @@ The general parser (`parse`) handles every RESP type. It reads each line by sear
 
 In the `-P 16` profile, parsing fell from about 47% of the time to about 22%. Socket writing now takes a larger *share* (about 45%, up from about 33%), but that's because the rest of the profile shrank, not because writing got slower.
 
-**Trade-off:** there are now two parsers that must agree on every input they both accept. Tests compare the fast path against the general parser on the same inputs to keep them consistent.
+**Trade-off**: parseCommandBatch duplicates some parsing logic for the common command-array format. It handles that specific pattern; other input falls back to the general parser.
 
 ## Future improvements
 
-- Try implementing SIEVE/S3-FIFO for store
+- Look into application of SIEVE/S3-FIFO for store
 - Handle a command split across several chunks
 - Log system to work with the snapshots save 
 - Argument-count errors for `GET` and `SET`

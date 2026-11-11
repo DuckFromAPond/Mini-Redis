@@ -92,3 +92,16 @@ test("two PINGs in one chunk -> two replies in order", () => {
     const store = new Store();
     expect(handleMessages("*1\r\n$4\r\nPING\r\n*1\r\n$4\r\nPING\r\n", store)).toEqual("+PONG\r\n+PONG\r\n");
 })
+
+test("redis-benchmark CONFIG GET chunk -> two array replies in order", () => {
+    const store = new Store();
+    expect(handleMessages("*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$4\r\nsave\r\n*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$10\r\nappendonly\r\n", store)).toEqual(
+        "*2\r\n$4\r\nsave\r\n$0\r\n\r\n" +
+        "*2\r\n$10\r\nappendonly\r\n$2\r\nno\r\n",
+    );
+})
+
+test("CONFIG GET with an unknown parameter -> empty array", () => {
+    const store = new Store();
+    expect(handleMessages("*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$9\r\nmaxmemory\r\n", store)).toEqual("*0\r\n");
+})
