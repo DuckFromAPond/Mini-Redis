@@ -121,6 +121,7 @@ export function parse(input: string | Buffer): RespValue[] {
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"); 
   const cursor: Cursor = { offset: 0 };               
 
+  // for holding list of inputs/commands (one entry per inputs/commands) received from the same chunk
   const values: RespValue[] = []
 
   // go through entire input and parse it into a list

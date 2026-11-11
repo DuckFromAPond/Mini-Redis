@@ -78,7 +78,7 @@ server.ts  socket "data" event - (if a SAVE is running: wait in queue)
    ▼
 handleMessages
    │
-   ├─ parse ──────────► ["GET", "drink"]        (array of strings)
+   ├─ parseCommandBatch/parse ──────────► ["GET", "drink"]        (array of strings)
    │
    ├─ handleCommands ─► looks up the "GET" handler and runs it
    │        │               ▲
@@ -95,8 +95,8 @@ server.ts  socket.write(reply)
 client
 ```
 - **Server (`server.ts`):** accepts TCP connections, passes each chunk to `handleMessages`, and writes the reply back.
-- **Orchestration (`handleMessages`):** calls `parse`, `handleCommands` and `serialize` in order. It wraps all of them in a try/catch, so any thrown error becomes an `-ERR ...` reply and one bad command never crashes the server.
-- **Protocol (`parse`, `serialize`):** `parse` turns RESP into values and `serialize` turns replies back into RESP. Bulk strings are read by declared byte length, so values containing `\r\n` or multibyte characters parse correctly.
+- **Orchestration (`handleMessages`):** calls `parseCommandBatch`/`parse`, `handleCommands` and `serialize` in order. It wraps all of them in a try/catch, so any thrown error becomes an `-ERR ...` reply and one bad command never crashes the server.
+- **Protocol (`parseCommandBatch`/`parse`, `serialize`):** `parseCommandBatch`/`parse` turns RESP into values and `serialize` turns replies back into RESP. Bulk strings are read by declared byte length, so values containing `\r\n` or multibyte characters parse correctly.
 - **Commands (`handleCommands`):** handlers live in a lookup map keyed by case-insensitive command name, and a handler throws an `Error` for bad input.
 - **Store:** a wrapper around a `Map`. Handlers call it, not `handleMessages`. Expired entries are checked through `getLiveEntry` before they're returned or saved.
 - **Replies in order:** `SAVE` is async, so the server queues later chunks from that connection until the save finishes.
@@ -111,7 +111,7 @@ NOTE: It is noticed that making the normal commands asynchronous with SAVE cause
 
 ## Performance
 
-Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,get -n 100000 -q`; pipelined runs use `redis-benchmark -t set,get -n 100000 -P 16 -q` for Redis and `redis-benchmark -t set,get -n 500000 -P 16 -q` for Mini-Redis. Results vary with machine load. Benchmarks are ran 3 times, the table reports the median rather than a range.
+Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,get -n 100000 -q`; pipelined runs use `redis-benchmark -t set,get -n 500000 -P 16 -q` for both Redis and Mini-Redis. Results vary with machine load. Benchmarks were ran 3 times, the table reports the median rather than a range (though the range isn't that wide anyway - around 10,000 at worst). It should also be noted that previous versions of the Mini-redis are recorded at different times in development and as such may be under different condition though they are recorded on the **same machine**. Both Real Redis and the Latest Mini-Redis are recorded after one another and their data below are the most recent recordings. 
 
 #### Plain requests (default pipeline depth)
 
@@ -120,22 +120,20 @@ Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,
 | Before async changes (`split`/`shift` parser, all sync)    | 76,336     | 80,451     | 0.559        | 0.559        |
 | After async changes (every command async)                  | 55,772     | 64,062     | 0.823        | 0.823        |
 | Partial async + pointer (only `SAVE` async, cursor parser) | 72,727     | 80,321     | 0.735        | 0.735        |
-| Real Redis                                                 | 113,765    | 112,612    | 0.183        | 0.183        |
-| Latest Mini-Redis, plain                                   | 99,800     | 101,626    | 0.439        | 0.439        |
-
-For the older historical plain rows, the original notes recorded one p50 value per run rather than separate SET and GET latencies. That value is repeated in both columns as a rough estimate; the latest plain Mini-Redis and all pipelined rows have separate SET/GET p50 measurements.
+| Real Redis                                                 | 140,449    | 140,845    | 0.183        | 0.183        |
+| Latest Mini-Redis, plain                                   | 129,032    | 131,926    | 0.351        | 0.351        |
 
 #### Pipelined requests (`-P 16`)
 
 | Version                            | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
 | ---------------------------------- | ---------- | ---------- | ------------ | ------------ |
-| Real Redis                         | 877,193    | 1,176,471  | 0.735        | 0.575        |
+| Real Redis                         | 1,213,592  | 1,506,024  | 0.591        | 0.463        |
 | Mini-Redis, before batch fast path | 214,041    | 243,902    | 3.527        | 3.135        |
-| Mini-Redis, with batch fast path   | 406,835    | 436,300    | 1.927        | 1.887        |
+| (Latest) Mini-Redis, with batch fast path   | 582,750    | 616,522    | 1.471        | 1.407        |
 
-Plain and pipelined results use different workloads and should not be compared directly. Redis and Mini-Redis pipelined runs used different request counts; treat their results as indicative rather than a controlled head-to-head benchmark. The before/after Mini-Redis pipelined figures are single runs, not multi-run averages.
+Plain and pipelined results use different workloads and should not be compared directly. Redis and Mini-Redis pipelined runs used different request counts; treat their results as indicative rather than a controlled head-to-head benchmark. 
 
-The `WARNING: Could not fetch server CONFIG` line is expected: the benchmark tool asks for server settings through `CONFIG`, which isn't implemented here. It doesn't affect the results.
+**NOTE**: It is noticed that 
 
 ### What the numbers show
 
@@ -180,6 +178,7 @@ In the `-P 16` profile, parsing fell from about 47% of the time to about 22%. So
 
 ## Future improvements
 
+- Try implementing SIEVE/S3-FIFO for store
 - Handle a command split across several chunks
 - Log system to work with the snapshots save 
 - Argument-count errors for `GET` and `SET`
