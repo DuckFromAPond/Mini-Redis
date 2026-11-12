@@ -1,69 +1,70 @@
 // parse returns a list: one entry per RESP value found in the input
 
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { IncompleteResp, parse, parseCommandBatch } from '@/src/resp.js'
 
 // one value in the input 
+describe('one value test with parse', () => { 
+    test('array of two bulk strings', () => {
+        expect(parse("*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n")).toEqual([["echo", "hello world"]]);         // technically this will be handled by handleCommandBatch now 
+    })
 
-test('array of two bulk strings', () => {
-    expect(parse("*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n")).toEqual([["echo", "hello world"]]);         // technically this will be handled by handleCommandBatch now 
-})
+    test('null bulk string $-1', () => {
+        expect(parse("$-1\r\n")).toEqual([null]);
+    })
 
-test('null bulk string $-1', () => {
-    expect(parse("$-1\r\n")).toEqual([null]);
-})
+    test('null array *-1', () => {
+        expect(parse("*-1\r\n")).toEqual([null]);
+    })
 
-test('null array *-1', () => {
-    expect(parse("*-1\r\n")).toEqual([null]);
-})
+    test('empty array *0', () => {
+        expect(parse("*0\r\n")).toEqual([[]]);
+    })
 
-test('empty array *0', () => {
-    expect(parse("*0\r\n")).toEqual([[]]);
-})
+    test('array with one bulk string', () => {
+        expect(parse("*1\r\n$4\r\nping\r\n")).toEqual([["ping"]]);
+    })
 
-test('array with one bulk string', () => {
-    expect(parse("*1\r\n$4\r\nping\r\n")).toEqual([["ping"]]);
-})
+    test('array containing a null and a string', () => {
+        expect(parse("*2\r\n$-1\r\n$3\r\nfoo\r\n")).toEqual([[null, "foo"]]);
+    })
 
-test('array containing a null and a string', () => {
-    expect(parse("*2\r\n$-1\r\n$3\r\nfoo\r\n")).toEqual([[null, "foo"]]);
-})
+    test('simple string', () => {
+        expect(parse("+OK\r\n")).toEqual(["OK"]);
+    })
 
-test('simple string', () => {
-    expect(parse("+OK\r\n")).toEqual(["OK"]);
-})
+    test('simple string with a space', () => {
+        expect(parse("+hello world\r\n")).toEqual(["hello world"]);
+    })
 
-test('simple string with a space', () => {
-    expect(parse("+hello world\r\n")).toEqual(["hello world"]);
-})
+    test('error', () => {
+        expect(parse("-Error message\r\n")).toEqual([new Error("Error message")]);
+    })
 
-test('error', () => {
-    expect(parse("-Error message\r\n")).toEqual([new Error("Error message")]);
-})
+    test('empty bulk string', () => {
+        expect(parse("$0\r\n\r\n")).toEqual([""]);
+    })
 
-test('empty bulk string', () => {
-    expect(parse("$0\r\n\r\n")).toEqual([""]);
-})
+    test('positive integer', () => {
+        expect(parse(":1000\r\n")).toEqual([1000]);
+    })
 
-test('positive integer', () => {
-    expect(parse(":1000\r\n")).toEqual([1000]);
-})
+    test('negative integer', () => {
+        expect(parse(":-5\r\n")).toEqual([-5]);
+    })
 
-test('negative integer', () => {
-    expect(parse(":-5\r\n")).toEqual([-5]);
-})
+    test('nested array', () => {
+        expect(parse("*2\r\n*1\r\n:5\r\n$3\r\nfoo\r\n")).toEqual([[[5], "foo"]]);
+    })
 
-test('nested array', () => {
-    expect(parse("*2\r\n*1\r\n:5\r\n$3\r\nfoo\r\n")).toEqual([[[5], "foo"]]);
-})
+    test('bulk string that contains \\r\\n in its data', () => {
+        expect(parse("$4\r\na\r\nb\r\n")).toEqual(["a\r\nb"]);
+    })
 
-test('bulk string that contains \\r\\n in its data', () => {
-    expect(parse("$4\r\na\r\nb\r\n")).toEqual(["a\r\nb"]);
-})
-
-test('bulk string with multibyte text (length counts bytes)', () => {
-    expect(parse("$5\r\ncafé\r\n")).toEqual(["café"]);
-})
+    test('bulk string with multibyte text (length counts bytes)', () => {
+        expect(parse("$5\r\ncafé\r\n")).toEqual(["café"]);
+    })
+}) 
 
 // several values in one chunk (pipelining) 
 

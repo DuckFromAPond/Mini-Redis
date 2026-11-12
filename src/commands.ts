@@ -1,12 +1,7 @@
 // handles parsed text 
 import { Store } from "@/src/store.js";
 import { SimpleString, parseInteger } from "@/src/resp.js";
-
-// configs for redis-benchmark :p 
-const CONFIGVALUES = new Map<string, string>([
-  ["save", ""],
-  ["appendonly", "no"],
-]);
+import { getConfigValue } from "@/src/config.js";
 
 // commandResult holds all possible return type 
 type CommandResult = string | number | SimpleString | null | Error | string[];
@@ -275,7 +270,7 @@ const handlers = new Map<string, Handler>([
         return new SimpleString("OK");
     }],
 
-    ["CONFIG", (args) => {  
+    ["CONFIG", (args, store) => {  
         if (args.length !== 2) { 
             throw new Error("wrong number of arguments given")
         }
@@ -285,18 +280,21 @@ const handlers = new Map<string, Handler>([
         if (command === undefined || command === null) { 
             throw new Error("wrong number of arguments for CONFIG commands")
         }
-
-        if (command.toUpperCase() !== "GET") { 
-            throw new Error(`unsupported CONFIG command ${key}`)
-        }
         
         if (key === undefined || key === null) { 
             throw new Error("invalid arguments given")
         }
 
-        const configValue = CONFIGVALUES.get(key);
-        
-        return configValue === undefined ? [] : [key, configValue];
+        switch (command.toUpperCase()) { 
+            case "GET": {
+                const configValue = store.getConfigValue(key);
+                return configValue === undefined ? [] : [key, configValue];
+            }
+            // case "SET": 
+            // TODO
+            default: 
+                throw new Error(`unsupported CONFIG command ${key}`)
+        }
     }]
 ])
 

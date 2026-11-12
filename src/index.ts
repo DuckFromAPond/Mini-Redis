@@ -2,7 +2,7 @@
 import { startServer } from "@/src/server.js";
 import path from "node:path";
 
-const arg  = Number(process.argv[2]) || 6379;
+const arg  = Number(process.argv[2]);
 const port = arg === undefined ? 6379 : Number(arg);
 
 // preferable to keep it as is and shouldn't rename but 我不知道 it should be fine

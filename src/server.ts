@@ -2,13 +2,15 @@ import net from "node:net"
 import { Store } from "@/src/store.js";
 import { handleMessages } from "@/src/messages.js";
 import { IncompleteResp } from "@/src/resp.js";
+import { serverConfig, type Config } from "@/src/config.js";
 
 export async function startServer(
     port: number = 6379,
     savePath?: string,
+    config: Config = serverConfig,
 ): Promise<net.Server> {
     // load data into store using the savepath
-    const store = await Store.load(savePath);
+    const store = await Store.load(savePath, config);
 
     // create server 
     const server = net.createServer((socket) => { 

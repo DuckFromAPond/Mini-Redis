@@ -2,8 +2,8 @@
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { count } from "node:console";
-
+import { Sieve } from "@/src/sieve.js";
+import { serverConfig, type Config, getConfigValue } from "@/src/config.js";
 
 // entry can either be a list or a string 
 type Entry = 
@@ -12,6 +12,9 @@ type Entry =
 
 // set the default save path to current dir in a json file named "dump.json"
 const defaultSavePath = resolve(process.cwd(), "dump.json");
+const ENTRY_OVERHEAD = 50;
+
+
 
 function invalidSnapshotError(savePath: string, detail: string): SyntaxError {
     return new SyntaxError(
@@ -50,68 +53,36 @@ function isEntry(value: unknown): value is Entry {
     return false;
 }
 
+
 // store handles data manip 
 export class Store { 
-    data = new Map<string, Entry>(); 
-
+    private readonly data = new Map<string, Entry>();
+    private readonly policy = new Sieve();
+    private usedBytes = 0;
+    
     // default constructor to define a readonly savepath using the default 
-    constructor(private readonly savePath = defaultSavePath) {}
+    constructor(
+        private readonly savePath = defaultSavePath,
+        private readonly config:Config = serverConfig,
+    ) {}
 
-    // static makes load method belongs to the Store class itself and not each instance itself
-    static async load(savePath = defaultSavePath): Promise<Store> {
-        let contents: string;
-        try {
-            // read from file 
-            contents = await readFile(savePath, "utf8");
-        } catch (error) {
-            // if save file doesn't exist/it can't read the file 
-            if (
-                typeof error === "object" &&
-                error !== null &&
-                "code" in error &&
-                error.code === "ENOENT"
-            ) {
-                // returns a fresh path with the given/default savepath 
-                return new Store(savePath);
-            }
-            
-            throw error;
-        }
+    // helper for calculating size of entry 
+    private sizeOf(key: string, entry: Entry): number {
+        const valueBytes = entry.type === "string" ? Buffer.byteLength(entry.value) 
+            : entry.value.reduce((total, item) => total + Buffer.byteLength(item),0);
 
-        // parse contents 
-        let snapshot: unknown;
-        try {
-            snapshot = JSON.parse(contents);
-        } catch (error) {
-            if (error instanceof SyntaxError) {
-                throw invalidSnapshotError(savePath, `invalid JSON (${error.message})`);
-            }
-            throw error;
-        }
-
-        if (!Array.isArray(snapshot)) {
-            throw invalidSnapshotError(savePath, "expected an array of key-entry pairs");
-        }
-
-        // make store and load entry into the store
-        const store = new Store(savePath);
-        for (const [index, item] of snapshot.entries()) {
-            if (!Array.isArray(item) || item.length !== 2) {
-                throw invalidSnapshotError(savePath, `invalid entry at index ${index}`);
-            }
-
-            const [key, entry] = item;
-            if (typeof key !== "string" || !isEntry(entry)) {
-                throw invalidSnapshotError(savePath, `invalid entry at index ${index}`);
-            }
-
-            if (entry.expiresAt === undefined || Date.now() < entry.expiresAt) {
-                store.data.set(key, entry);
-            }
-        }
-
-        return store;
+        return Buffer.byteLength(key) + valueBytes + ENTRY_OVERHEAD;
     }
+
+    // TODO add this check and the sizeof + usedbyte update to all updates
+    private canFit(key: string, nextEntry: Entry) : boolean { 
+        const existing = this.data.get(key);
+        const oldSize = existing ? this.sizeOf(key, existing) : 0;
+        const projectedBytes = this.usedBytes - oldSize + this.sizeOf(key, nextEntry);
+
+        return this.config.maxmemory === 0 || projectedBytes <= this.config.maxmemory;
+    }
+
 
     // helper function for checking expiery bfore getting/returning data
     private getLiveEntry(key: string): Entry | undefined {
@@ -186,6 +157,63 @@ export class Store {
         }
 
         return entry.value.length;
+    }
+
+    // static makes load method belongs to the Store class itself and not each instance itself
+    static async load(savePath = defaultSavePath, config = serverConfig): Promise<Store> {
+        let contents: string;
+        try {
+            // read from file 
+            contents = await readFile(savePath, "utf8");
+        } catch (error) {
+            // if save file doesn't exist/it can't read the file 
+            if (
+                typeof error === "object" &&
+                error !== null &&
+                "code" in error &&
+                error.code === "ENOENT"
+            ) {
+                // returns a fresh path with the given/default savepath 
+                return new Store(savePath, config);
+            }
+            
+            throw error;
+        }
+
+        // parse contents 
+        let snapshot: unknown;
+        try {
+            snapshot = JSON.parse(contents);
+        } catch (error) {
+            if (error instanceof SyntaxError) {
+                throw invalidSnapshotError(savePath, `invalid JSON (${error.message})`);
+            }
+            throw error;
+        }
+
+        if (!Array.isArray(snapshot)) {
+            throw invalidSnapshotError(savePath, "expected an array of key-entry pairs");
+        }
+
+        // make store and load entry into the store
+        const store = new Store(savePath, config);
+        for (const [index, item] of snapshot.entries()) {
+            if (!Array.isArray(item) || item.length !== 2) {
+                throw invalidSnapshotError(savePath, `invalid entry at index ${index}`);
+            }
+
+            const [key, entry] = item;
+            if (typeof key !== "string" || !isEntry(entry)) {
+                throw invalidSnapshotError(savePath, `invalid entry at index ${index}`);
+            }
+
+            if (entry.expiresAt === undefined || Date.now() < entry.expiresAt) {
+                store.data.set(key, entry);
+                store.usedBytes += store.sizeOf(key, entry);
+            }
+        }
+
+        return store;
     }
      
     set(key: string, value: string, expiresAt?: number): void {
@@ -286,5 +314,9 @@ export class Store {
             // clean up temp path 
             await rm(tempPath, { force: true });
         }
+    }
+
+    getConfigValue(name: string): string | undefined {
+        return getConfigValue(name, this.config);
     }
 }

@@ -104,7 +104,7 @@ test("redis-benchmark CONFIG GET chunk -> two array replies in order", () => {
 
 test("CONFIG GET with an unknown parameter -> empty array", () => {
     const store = new Store();
-    expect(handleMessages("*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$9\r\nmaxmemory\r\n", store)).toEqual("*0\r\n");
+    expect(handleMessages("*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$4\r\nsave\r\n", store)).toEqual("*2\r\n$4\r\nsave\r\n$0\r\n\r\n");
 })
 
 test("1 command across 2 chunks", () => {
