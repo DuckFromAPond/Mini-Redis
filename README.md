@@ -178,7 +178,6 @@ In the `-P 16` profile, parsing fell from about 47% of the time to about 22%. So
 ## Future improvements
 
 - Look into application of SIEVE/S3-FIFO for store
-- Handle a command split across several chunks
 - Log system to work with the snapshots save 
 - Argument-count errors for `GET` and `SET`
 - Inline commands (plain text like `PING`, without the array form)
