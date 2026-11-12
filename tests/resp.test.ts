@@ -1,7 +1,7 @@
 // parse returns a list: one entry per RESP value found in the input
 
 import { expect, test } from 'vitest'
-import { parse, parseCommandBatch } from '@/src/resp.js'
+import { IncompleteResp, parse, parseCommandBatch } from '@/src/resp.js'
 
 // one value in the input 
 
@@ -101,7 +101,7 @@ test("command batch fast parser falls back for other RESP shapes", () => {
 // errors 
 
 test('incomplete bulk string throws', () => {
-    expect(() => parse("*1\r\n$4\r\nping")).toThrow("invalid or incomplete bulk string");
+    expect(() => parse("*1\r\n$4\r\nping")).toThrow(IncompleteResp);
 })
 
 test('data after a complete value is read as the next value, so junk throws', () => {

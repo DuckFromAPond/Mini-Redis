@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { handleMessages } from '@/src/messages.js';
 import { Store } from '@/src/store.js';
+import { IncompleteResp } from '@/src/resp.js';
 
 test('PING command -> parse -> command -> serialize -> PONG', () => { 
     const store = new Store();
@@ -104,4 +105,14 @@ test("redis-benchmark CONFIG GET chunk -> two array replies in order", () => {
 test("CONFIG GET with an unknown parameter -> empty array", () => {
     const store = new Store();
     expect(handleMessages("*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$9\r\nmaxmemory\r\n", store)).toEqual("*0\r\n");
+})
+
+test("1 command across 2 chunks", () => {
+    const store = new Store();
+    const first = Buffer.from("*2\r\n$4\r\nEC");
+    const second = Buffer.from("HO\r\n$3\r\nhey\r\n");
+
+    expect(() => handleMessages(first, store)).toThrow(IncompleteResp);
+
+    expect(handleMessages(Buffer.concat([first, second]), store)).toBe("$3\r\nhey\r\n");
 })

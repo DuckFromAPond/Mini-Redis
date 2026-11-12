@@ -1,4 +1,4 @@
-import { parse, parseCommandBatch, serialize } from "@/src/resp.js";
+import { parse, parseCommandBatch, serialize, IncompleteResp } from "@/src/resp.js";
 import { handleCommands } from "@/src/commands.js";
 import { Store } from "@/src/store.js";
 
@@ -26,6 +26,10 @@ export function handleMessages(input: string | Buffer, store: Store): string | P
         // parse is now a fallback for unrecognizable commands
         values = parseCommandBatch(input) ?? parse(input);
     } catch (err) { 
+        if (err instanceof IncompleteResp) {
+            // throw err to be caught in the server file
+            throw err;
+        }
         return serializeError(err);
     }
 

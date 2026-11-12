@@ -11,6 +11,9 @@ export class SimpleString {
 type RespValue = string | number | null | Error | RespValue[];
 type Cursor = { offset: number };
 
+// for detecting incomplete resp in chunks
+export class IncompleteResp extends SyntaxError {}
+
 // handle val check for given length and data (then parse to number)
 export function parseInteger(value : string, desc:string = "integer") : number {
   // check if the value is a number
@@ -32,7 +35,7 @@ function readLine(input: Buffer, cursor: Cursor) : string {
   // starting from offset search for the end of the line using "\r\n"
   const end = input.indexOf("\r\n", cursor.offset, "ascii")
   if (end === -1) { 
-    throw new SyntaxError("incomplete RESP line")
+    throw new IncompleteResp();
   }
 
   // save line from offset to the end as string 
@@ -47,7 +50,7 @@ function parseValue(input:Buffer, cursor: Cursor): RespValue {
   // get the value at pointer (will mostly be just the marker for datatype)
   const marker = input[cursor.offset]; 
   if (marker === undefined) {
-    throw new SyntaxError("incomplete RESP value");
+    throw new IncompleteResp();
   }
   // move pointer to the next
   cursor.offset += 1;
@@ -74,9 +77,13 @@ function parseValue(input:Buffer, cursor: Cursor): RespValue {
       }
 
       // checking the length of input 
+      if (length < 0) {
+        throw new SyntaxError("invalid bulk string length");
+      }
+
       // note: +2 for trailing \r\n 
-      if (length < 0 || cursor.offset + length + 2 > input.length) { 
-        throw new SyntaxError("invalid or incomplete bulk string")
+      if (cursor.offset + length + 2 > input.length) {
+        throw new IncompleteResp();
       }
 
       // verify if the \r\n 
@@ -98,7 +105,7 @@ function parseValue(input:Buffer, cursor: Cursor): RespValue {
       }
 
       if (length < 0) {
-        throw new SyntaxError("invalid or incomplete array length");
+        throw new SyntaxError("invalid array length");
       }
 
       // recursively parse into an array
@@ -170,7 +177,7 @@ function readAsciiInteger(input: Buffer, cursor: Cursor, description: string): n
   // requires both \r\n and not just \r or else throw error 
   if (input[cursor.offset] !== 13 || input[cursor.offset + 1] !== 10) {
     if (cursor.offset >= input.length || input[cursor.offset] === 13) {
-      throw new SyntaxError("incomplete RESP line");
+      throw new IncompleteResp();
     }
     throw new SyntaxError(`invalid ${description} value`);
   }
@@ -205,13 +212,13 @@ export function parseCommandBatch(input: string | Buffer): (string | null)[][] |
 
     cursor.offset += 1;
 
-    // get the arr length by converting the ascii to int
+    // get the arr length by converting the ascii to int (also doubles as the number of time to loop)
     const count = readAsciiInteger(buffer, cursor, "array length");
     if (count === -1) {
       return undefined;
     }
     if (count < 0) {
-      throw new SyntaxError("invalid or incomplete array length");
+      throw new SyntaxError("invalid array length");
     }
 
     const args: (string | null)[] = [];
@@ -231,13 +238,13 @@ export function parseCommandBatch(input: string | Buffer): (string | null)[][] |
         continue;
       }
       if (length < 0) {
-        throw new SyntaxError("invalid or incomplete bulk string");
+        throw new SyntaxError("invalid or incomplete string length");
       }
 
       // check "\r\n" existence
       const end = cursor.offset + length;
       if (end + 2 > buffer.length) {
-        throw new SyntaxError("invalid or incomplete bulk string");
+        throw new IncompleteResp();
       }
       if (buffer[end] !== 13 || buffer[end + 1] !== 10) {
         throw new SyntaxError("bulk string is missing its trailing CRLF");
