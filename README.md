@@ -1,10 +1,16 @@
 # Mini-Redis
 
-A from-scratch implementation of a subset of Redis in TypeScript, built to learn the RESP protocol and how a server turns socket bytes into commands and replies.
+Mini-Redis is a small Redis-like server written in TypeScript. It implements a subset of Redis commands and RESP2 to explore how a server parses TCP data, executes commands, and returns responses.
 
-## Try it out 
+## Requirements
 
-Requires Node.js (a recent version) and, to try the server, `redis-cli` (it comes with Redis).
+- Node.js and npm
+- `redis-cli` to connect to the server
+- `redis-benchmark` to run the benchmarks
+
+The Redis tools are optional. The server itself uses Node.js built-in modules at runtime.
+
+## Try it out
 
 ```bash
 git clone https://github.com/DuckFromAPond/Mini-Redis
@@ -13,178 +19,195 @@ npm install
 npm start
 ```
 
-The server listens on port `6379`, the default Redis port. If a real Redis is already running there, stop it first or start this server on another port (`startServer(port)`, see `src/server.ts`). 
+The server listens on port `6379` by default. Pass a port and, optionally, a snapshot path:
 
 ```bash
-npm start              # port 6379 (default)
-npm start -- 7000      # custom port
-redis-cli -p 7000 PING
+npm start -- 7000
+npm start -- 7000 ./custom-dump.json
 ```
 
-In a second terminal:
+If Redis already uses port `6379`, choose another port. Connect from a second terminal:
 
 ```bash
-redis-cli PING
+redis-cli -p 7000 PING
 # PONG
-redis-cli SET drink coffee
+
+redis-cli -p 7000 SET drink coffee
 # OK
-redis-cli GET drink
+
+redis-cli -p 7000 GET drink
 # "coffee"
 ```
 
 Other scripts:
 
 ```bash
-npm run dev    # restart the server automatically when files change
+npm run dev    # restart the server when source files change
 npm test       # run the test suite
 ```
 
-`SAVE` writes a snapshot to `dump.json` in the directory where you started the server, and the server loads it again on startup.
+## Supported commands
 
-## Built with
+Mini-Redis implements the commands below. Their behavior is similar to Redis, but this project does not implement every Redis option or compatibility detail.
 
-- **Language and runtime:** [TypeScript](https://www.typescriptlang.org/) on [Node.js](https://nodejs.org/), using only built-in modules for the server (`node:net`, `node:fs`). No runtime dependencies.
-- **Development:** [tsx](https://tsx.is/) to run TypeScript directly (`npm start`, `npm run dev`).
-- **Testing:** [Vitest](https://vitest.dev/) for unit and integration tests (`npm test`), and [ioredis](https://github.com/redis/ioredis) as a real client for the connection tests.
-- **Manual testing and benchmarking:** `redis-cli` and `redis-benchmark`, which come with Redis.
-## Command list
-| Command | Syntax                                              | Description                                       | Example                      |
-| ------- | --------------------------------------------------- | ------------------------------------------------- | ---------------------------- |
-| PING    | `PING [message]`                                    | Check the connection                              | `PING`                       |
-| ECHO    | `ECHO message`                                      | Return the given message                          | `ECHO hello`                 |
-| SET     | `SET key value [EX seconds  \| PX milliseconds  \| EXAT unix-time-seconds \| PXAT unix-time-milliseconds]` | Store a value, optionally with an expiry     | `SET drink coffee EX 60`     |
-| GET     | `GET key`                                           | Read a value (null if the key is missing)         | `GET drink`                  |
-| EXIST   | `EXISTS key [key ...]`                              | Count how many of the given keys are present      | `EXISTS drink`               |
-| DEL     | `DEL key [key ...]`                                 | Delete keys, returns how many were removed        | `DEL drink`                  |
-| INCR    | `INCR key`                                          | Add one to a stored integer                       | `INCR counter`               |
-| DECR    | `DECR key`                                          | Subtract one from a stored integer                | `DECR counter`               |
-| LPUSH   | `LPUSH key value [value ...]`                       | Push values onto the head of a list               | `LPUSH jobs a b`             |
-| LRANGE  | `LRANGE key start stop`                             | Print values between given start and stop index from a given list | `LRANGE jobs 0 3`            |
-| RPUSH   | `RPUSH key value [value ...]`                       | Push values onto the tail of a list               | `RPUSH jobs a b`             |
-| SAVE    | `SAVE`                                              | Write a snapshot to disk                          | `SAVE`                       |
+| Command | Syntax | Description |
+| --- | --- | --- |
+| `PING` | `PING [message]` | Check the connection or return a message. |
+| `ECHO` | `ECHO message` | Return the message. |
+| `SET` | `SET key value [EX seconds \| PX milliseconds \| EXAT unix-time-seconds \| PXAT unix-time-milliseconds]` | Store a string, optionally with an expiry. |
+| `GET` | `GET key` | Return a string, or null if the key does not exist. |
+| `EXISTS` | `EXISTS key [key ...]` | Count the keys that exist. |
+| `DEL` | `DEL key [key ...]` | Delete keys and return the number removed. |
+| `INCR` | `INCR key` | Add one to an integer value. |
+| `DECR` | `DECR key` | Subtract one from an integer value. |
+| `LPUSH` | `LPUSH key value [value ...]` | Add values to the head of a list. |
+| `RPUSH` | `RPUSH key value [value ...]` | Add values to the tail of a list. |
+| `LRANGE` | `LRANGE key start stop` | Return a range of list values. |
+| `SAVE` | `SAVE` | Write a snapshot to disk. |
+| `CONFIG GET` | `CONFIG GET parameter` | Read a supported configuration value. |
+| `CONFIG SET` | `CONFIG SET parameter value` | Change a supported runtime setting. |
 
-Commands behave *similarly* to their Redis counterparts, as described in Redis's documentation.
+## Memory limits and eviction
 
-## Design details
+The default `maxmemory` value is `0`, which means unlimited. Use `CONFIG SET` to set a byte limit and choose an eviction policy:
 
-How one request moves through the server:
-
+```text
+CONFIG GET maxmemory
+CONFIG SET maxmemory 100mb
+CONFIG SET maxmemory-policy sieve
 ```
+
+`maxmemory` accepts bytes or `k`/`kb`, `m`/`mb`, and `g`/`gb` suffixes, without regard to letter case. `CONFIG GET maxmemory` returns the limit in bytes.
+
+Mini-Redis supports two policies:
+
+- `noeviction` (default): reject a write that would exceed the limit.
+- `sieve`: evict keys using the SIEVE policy until the write fits.
+
+The store estimates each entry's size from its UTF-8 key and value bytes plus a fixed overhead. This estimate is not the Node.js process's actual heap usage.
+
+Loading a snapshot does not discard entries that exceed the configured limit. With `noeviction`, later writes fail until enough space is freed. With `sieve`, a later write can evict entries to make room. Changing `maxmemory` does not immediately evict entries; the policy applies when a write needs room. Runtime configuration changes are not saved across restarts.
+
+`CONFIG GET` also returns the compatibility values `save` and `appendonly`. `CONFIG SET` supports only `maxmemory` and `maxmemory-policy`.
+
+## Snapshots
+
+`SAVE` writes the store to a JSON snapshot named `dump.json` in the current working directory. The server loads that file when it starts. Pass a different path as the second CLI argument after the port:
+
+```bash
+npm start -- 6379 ./data.json
+```
+
+The snapshot is written to a temporary file and then renamed into place. Expired entries are omitted. If the file is missing, the server starts with an empty store. If the snapshot is invalid or cannot be read, startup fails with an error that identifies the file and explains how to recover.
+
+Snapshots use this project's JSON format. They are not Redis RDB files and are not compatible with Redis persistence files.
+
+`SAVE` is asynchronous. While it runs, the server queues later data chunks from the same connection so their replies remain in order.
+
+## Protocol and design
+
+Mini-Redis handles RESP2 values used by its command set. It supports simple strings, errors, integers, bulk strings, and arrays. Most clients send commands as arrays of bulk strings.
+
+Each TCP connection buffers incomplete input, so a command can arrive across multiple network chunks. It can also parse multiple commands received together and combine their responses.
+
+```text
 client (redis-cli, ioredis)
-   │  raw bytes: *2\r\n$3\r\nGET\r\n$5\r\ndrink\r\n
+   │  RESP bytes
    ▼
-server.ts  socket "data" event - (if a SAVE is running: wait in queue)
-   │  chunk
+server.ts
+   │  buffer incomplete input; queue later chunks while SAVE runs
    ▼
 handleMessages
-   │
-   ├─ parseCommandBatch/parse ──────────► ["GET", "drink"]        (array of strings)
-   │
-   ├─ handleCommands ─► looks up the "GET" handler and runs it
-   │        │               ▲
-   │        └──► store ─────┘         
-   │  result: "coffee" 
-   │
-   ├─ serialize ──────► $6\r\ncoffee\r\n
-   │
-   │  any thrown Error at any step ──► serialize ──► -ERR message\r\n
-   ▼
-server.ts  socket.write(reply)
-   │
+   ├─ parseCommandBatch / parse
+   ├─ handleCommands
+   │    └─ Store
+   └─ serialize RESP replies
    ▼
 client
 ```
-- **Server (`server.ts`):** accepts TCP connections, passes each chunk to `handleMessages`, and writes the reply back.
-- **Orchestration (`handleMessages`):** calls `parseCommandBatch`/`parse`, `handleCommands` and `serialize` in order. It wraps all of them in a try/catch, so any thrown error becomes an `-ERR ...` reply and one bad command never crashes the server.
-- **Protocol (`parseCommandBatch`/`parse`, `serialize`):** `parseCommandBatch`/`parse` turns RESP into values and `serialize` turns replies back into RESP. Bulk strings are read by declared byte length, so values containing `\r\n` or multibyte characters parse correctly.
-- **Commands (`handleCommands`):** handlers live in a lookup map keyed by case-insensitive command name, and a handler throws an `Error` for bad input.
-- **Store:** a wrapper around a `Map`. Handlers call it, not `handleMessages`. Expired entries are checked through `getLiveEntry` before they're returned or saved.
-- **Replies in order:** `SAVE` is async, so the server queues later chunks from that connection until the save finishes.
 
-## Save details
-
-SAVE writes the current store snapshot as JSON to dump.json in the current working directory. The server loads that snapshot when it starts; missing snapshots start with an empty store, while invalid snapshots or other file errors prevent startup. For an invalid snapshot, the startup error includes the file path and recovery guidance: back up and repair the file, or remove it to start with an empty store, then restart. Expired entries are omitted when saving and loading. startServer accepts an optional second argument to select a different snapshot path.
-
-Command handling stays synchronous for ordinary commands. SAVE is asynchronous, and the server queues later requests from that same connection until the save finishes so replies remain in order.
-
-NOTE: It is noticed that making the normal commands asynchronous with SAVE causes significant overhead on performance as found through Redis benchmark compared to when it is not async. This is most likely due to a combination of old commands already being lightweight and new scheduling cost for each request.
+- **Server (`src/server.ts`):** accepts TCP connections, buffers partial commands, and writes responses.
+- **Message handling (`src/messages.ts`):** parses input, dispatches commands, and serializes responses. Incomplete RESP input returns to the server for more data.
+- **RESP (`src/resp.ts`):** provides a general parser and a fast path for arrays of bulk-string arguments. The general parser handles other supported RESP shapes.
+- **Commands (`src/commands.ts`):** maps case-insensitive command names to handlers.
+- **Store (`src/store.ts`):** holds strings and lists, tracks expiration and estimated memory use, and applies the configured eviction policy.
 
 ## Performance
 
-Measured locally with `redis-benchmark`. Plain runs use `redis-benchmark -t set,get -n 100000 -q`; pipelined runs use `redis-benchmark -t set,get -n 500000 -P 16 -q` for both Redis and Mini-Redis. Results vary with machine load. Benchmarks were ran 3 times, the table reports the median rather than a range (though the range isn't that wide anyway - around 10,000 at worst). 
+The measurements below use `redis-benchmark`. Plain runs use `redis-benchmark -t set,get -n 100000 -q`. Pipelined runs use `redis-benchmark -t set,get -n 500000 -P 16 -q`, which sends batches of 16 commands. The latest comparison used the median of three runs. Results vary with machine load.
 
+Historical Mini-Redis measurements were collected at different points during development on the same machine. Treat those rows as context, not as controlled comparisons. Redis and the latest Mini-Redis measurements were also collected on the same machine and done in sucession.
 
-It should also be noted that previous versions of the Mini-redis are recorded at different times in development and as such may be under different condition though they are recorded on the **same machine**. Both Real Redis and the Latest Mini-Redis version are recorded after one another and their data below are the most recent recordings. 
+### Plain requests
 
-#### Plain requests (100,000 requests, default pipeline depth)
+100,000 requests; default pipeline depth.
 
-| Version                                                    | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
-| ---------------------------------------------------------- | ---------- | ---------- | ------------ | ------------ |
-| Before async changes (`split`/`shift` parser, all sync)    | 76,336     | 80,451     | 0.559        | 0.559        |
-| After async changes (every command async)                  | 55,772     | 64,062     | 0.823        | 0.823        |
-| Partial async + pointer (only `SAVE` async, cursor parser) | 72,727     | 80,321     | 0.735        | 0.735        |
-| Real Redis                                                 | 140,449    | 140,845    | 0.183        | 0.183        |
-| Latest Mini-Redis, plain                                   | 129,032    | 131,926    | 0.351        | 0.351        |
+| Version | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Before async changes (`split`/`shift` parser; all commands synchronous) | 76,336 | 80,451 | 0.559 | 0.559 |
+| After async changes (every command asynchronous) | 55,772 | 64,062 | 0.823 | 0.823 |
+| Partial async and cursor parser (`SAVE` only asynchronous) | 72,727 | 80,321 | 0.735 | 0.735 |
+| Redis | 140,449 | 140,845 | 0.183 | 0.183 |
+| Latest Mini-Redis | 129,032 | 131,926 | 0.351 | 0.351 |
 
-#### Pipelined requests (500,000 requests, `-P 16` / batch of 16 commands per network packet)
+### Pipelined requests
 
-| Version                            | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
-| ---------------------------------- | ---------- | ---------- | ------------ | ------------ |
-| Real Redis                         | 1,213,592  | 1,506,024  | 0.591        | 0.463        |
-| Mini-Redis, before batch fast path | 214,041    | 243,902    | 3.527        | 3.135        |
-| (Latest) Mini-Redis, with batch fast path   | 582,750    | 616,522    | 1.471        | 1.407        |
+500,000 requests; pipeline depth 16.
 
-### What the numbers show
+| Version | SET (req/s) | GET (req/s) | p50 SET (ms) | p50 GET (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Redis | 1,213,592 | 1,506,024 | 0.591 | 0.463 |
+| Mini-Redis, before the batch fast path | 214,041 | 243,902 | 3.527 | 3.135 |
+| Latest Mini-Redis, with the batch fast path | 582,750 | 616,522 | 1.471 | 1.407 |
 
-- **Making every command async cost the most.** Throughput dropped by roughly 27% for SET and 20% for GET. Ordinary commands were already cheap, so the extra scheduling per request became a large share of the work.
-- **Keeping ordinary commands synchronous recovered most of it.** Only `SAVE` is async now.
-- **Pipelining reduced per-command socket overhead.** With `-P 16`, the server can process multiple commands received together and combine their replies into one socket write, rather than doing a separate read/response/write cycle for each command.
-- **The command-batch fast path improved pipelined throughput further.** Compared with the prior pipelined run, SET throughput rose about 1.9x and GET about 1.8x. It specializes parsing for the common command frame (an array of bulk-string arguments) while other RESP shapes still use the general parser.
-- **The latest plain run median is about 99.8k SET and 101.6k GET requests per second.** These are newer measurements than the earlier plain rows; differences between individual benchmark sessions may include machine load as well as code changes.
+### What the measurements show
 
-### Profiling
+- Making every command asynchronous reduced throughput. Ordinary commands are synchronous; `SAVE` is asynchronous.
+- Pipelining reduces per-command network overhead by processing multiple commands received together and combining their responses.
+- Compared with the earlier pipelined Mini-Redis run, the latest batch-parser run achieved about 2.7 times the SET throughput and 2.5 times the GET throughput. The benchmark runs were not a controlled comparison, so treat these ratios as approximate.
+- The latest plain Mini-Redis run reached about 129,000 SET and 132,000 GET requests per second.
 
-A CPU profile (`node --cpu-prof`) during a 500,000-request plain benchmark initially showed about 75% of profile time in the socket write path (`writeUtf8String` alone was about 70% self time) and about 17% in parsing. This indicated that reducing parser work alone would have limited impact, while batching commands could reduce socket-write overhead.
+### Profiling and the batch parser
 
-After adding pipelined command handling and the specialized batch parser, a profile of the optimized `-P 16` run showed a different distribution:
+A CPU profile (`node --cpu-prof`) during an earlier 500,000-request plain run showed about 75% of profile time in the socket write path and about 17% in parsing. In the optimized `-P 16` run, the profile showed:
 
-| Profile function       | Total time | Self time |
-| ---------------------- | ---------- | --------- |
-| `writeUtf8String`      | ~45%       | ~42%      |
-| `utf8Slice`            | ~12%       | ~11%      |
-| `handleMessages`       | ~39%       | ~5.6%     |
-| `parseCommandBatch`    | ~22%       | ~4.3%     |
-| `handleCommands`       | ~7.4%      | ~4.5%     |
+| Function | Total time | Self time |
+| --- | ---: | ---: |
+| `writeUtf8String` | ~45% | ~42% |
+| `utf8Slice` | ~12% | ~11% |
+| `handleMessages` | ~39% | ~5.6% |
+| `parseCommandBatch` | ~22% | ~4.3% |
+| `handleCommands` | ~7.4% | ~4.5% |
 
-The total-time percentages overlap because profiler entries include time spent in their child calls; self-time percentages are the non-overlapping portion. Profiling adds overhead, so treat these as proportions rather than exact costs.
+Total-time percentages include child calls and overlap. Self-time percentages do not. Profiling adds overhead, so treat these values as proportions rather than exact costs.
 
-**What led to the improvement:** the initial profile identified socket writes as the main cost for individual requests. Pipelining amortized that work across commands by parsing a batch and writing combined replies. Profiling then showed parsing of the common RESP command shape was a remaining opportunity, so `parseCommandBatch` was added to scan bulk-string arrays directly from the input buffer, avoiding some general-parser work and intermediate conversions. The optimized profile still shows socket writing and UTF-8 conversion as significant costs, so further tuning should be guided by repeated benchmarks and profiles.
+Most Redis clients encode commands as arrays of bulk strings, such as:
 
-#### Why parseCommandBatch helps
+```text
+*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n
+```
 
-The general parser (`parse`) handles every RESP type. It reads each line by searching for `\r\n` (`Buffer.indexOf`), turns the line into a string, checks it with a regex and converts it with `Number()`. Nearly every client command has one shape, though: an array of bulk strings, such as `*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n`. For that shape, four of the seven lines are only length headers (`*3`, `$3`, ...) made of digits.
+`parseCommandBatch` reads that common form directly from the input buffer. It reads length headers as bytes, avoiding temporary header strings, regular-expression checks, and numeric conversions. It converts argument values to strings and builds the command arrays used by the handlers. Other supported RESP shapes fall back to the general parser.
 
-`parseCommandBatch` handles only that shape and works directly on the bytes:
+The fast path duplicates some parsing logic, so it remains limited to the common command shape. In the reported profiles, parsing accounted for about 22% of time in the optimized pipelined run, down from about 47% in the earlier pipelined profile. Socket writing and UTF-8 conversion remain significant costs.
 
-- **Length headers are read as numbers byte by byte** (`readAsciiInteger`), so there is no `indexOf` call, no temporary string, no regex and no `Number()` for them. The profile before this change showed those costs under `indexOfBuffer`, `utf8Slice`, `toString` and `parseInteger`.
-- **Only the argument values become strings,** which the command handlers need anyway.
-- **It loops over the whole chunk** and builds the final `string[][]` that `handleCommands` expects, without recursion or an intermediate `RespValue` structure.
-- **Anything else returns `undefined`** and falls back to the general parser, so unusual input behaves as before.
+## Limitations
 
-In the `-P 16` profile, parsing fell from about 47% of the time to about 22%. Socket writing now takes a larger *share* (about 45%, up from about 33%), but that's because the rest of the profile shrank, not because writing got slower.
-
-**Trade-off**: parseCommandBatch duplicates some parsing logic for the common command-array format. It handles that specific pattern; other input falls back to the general parser.
+- Mini-Redis implements a small Redis command subset, not the full Redis protocol or command set.
+- It does not support RESP3 or inline commands such as plain-text `PING`.
+- Memory usage is estimated; it is not an exact measure of process memory.
+- Snapshots use a project-specific JSON format. The server does not implement Redis RDB or AOF.
+- `CONFIG SET` changes supported settings only for the current server process.
 
 ## Future improvements
 
-- Look into application of SIEVE/S3-FIFO for store
-- Log system to work with the snapshots save 
-- Argument-count errors for `GET` and `SET`
-- Inline commands (plain text like `PING`, without the array form)
-- RESP3 support ( `HELLO 3` handshake and the extra types)
+- Add structured logging for snapshot operations.
+- Support inline commands such as plain-text `PING`.
+- Add RESP3 support, including `HELLO 3` and its additional data types.
 
 ## Credits
 
 - [Coding Challenges: Build Your Own Redis Server](https://codingchallenges.fyi/challenges/challenge-redis/)
 - [Redis Serialization Protocol (RESP) specification](https://redis.io/docs/latest/develop/reference/protocol-spec/)
 - [Redis command documentation](https://redis.io/docs/latest/commands/)
+- [SIEVE documentation](https://cachemon.github.io/SIEVE-website/)
