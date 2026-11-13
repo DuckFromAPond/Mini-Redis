@@ -1,4 +1,3 @@
-// in-memory store
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -13,8 +12,7 @@ type Entry =
 // set the default save path to current dir in a json file named "dump.json"
 const defaultSavePath = resolve(process.cwd(), "dump.json");
 
-
-// using a set estimated overhead cost for each key here for other cost not accounted by the size of the entry & key
+// fixed overhead approximates per-entry costs not represented by UTF-8 key/value bytes.
 const ENTRY_OVERHEAD = 50;
 
 
@@ -56,7 +54,7 @@ function isEntry(value: unknown): value is Entry {
 }
 
 
-// store handles data manip 
+/** In-memory store for strings and lists, with expiry, persistence, and optional memory policies. */
 export class Store { 
     private readonly data = new Map<string, Entry>();
     private policy = new Sieve();
@@ -82,6 +80,7 @@ export class Store {
         const enabled = this.isSieveEnabled();
         if (enabled === this.sieveEnabled) return;
 
+        // Existing keys need metadata when SIEVE is enabled at runtime.
         this.policy = new Sieve();
         this.sieveEnabled = enabled;
         if (!enabled) return;
@@ -141,7 +140,6 @@ export class Store {
     // helper for evicting entry when passed the limit 
     private makeRoom(key: string, nextEntry: Entry): boolean {
         const limit = this.config.maxmemory;
-        // maxmemory = 0 means use as much as available 
         if (limit === 0) return true;
 
         const newSize = this.sizeOf(key, nextEntry);
@@ -205,7 +203,6 @@ export class Store {
 
         // update number
         const updated = current + delta;
-        // check if it is a safe num
         if (!Number.isSafeInteger(updated)) {
             throw new Error("value out of range");
         }
@@ -280,7 +277,15 @@ export class Store {
         return nextValues.length;
     }
 
-    // static makes load method belongs to the Store class itself and not each instance itself
+    /**
+     * Loads a JSON snapshot into a new store.
+     *
+     * @param savePath - Snapshot path. Defaults to `dump.json` in the current working directory.
+     * @param config - Configuration to apply to the store.
+     * @returns The restored store; a missing snapshot produces an empty store.
+     * @remarks Snapshot contents are loaded even when their estimated size exceeds `maxmemory`.
+     * @throws {SyntaxError} If the snapshot is malformed or contains invalid entries.
+     */
     static async load(savePath = defaultSavePath, config = serverConfig): Promise<Store> {
         let contents: string;
         try {
@@ -342,6 +347,14 @@ export class Store {
         return store;
     }
      
+    /**
+     * Stores a string, replacing any existing value for the key.
+     *
+     * @param key - Key to write.
+     * @param value - String value to store.
+     * @param expiresAt - Optional absolute expiration time in Unix milliseconds.
+     * @throws {Error} If the write exceeds `maxmemory` and the active policy cannot make room.
+     */
     set(key: string, value: string, expiresAt?: number): void {
         // check entry with key in case it is overwriting
         this.getLiveEntry(key);
@@ -358,10 +371,8 @@ export class Store {
         }
 
         const storedEntry = this.data.get(key);
-        // set new change 
         this.data.set(key, nextEntry);
 
-        //
         if (this.sieveEnabled) {
             if (storedEntry === undefined) {
                 this.policy.onInsert(key);
@@ -375,6 +386,7 @@ export class Store {
         }
     }
 
+    /** Returns a live string value, or `undefined` if the key is missing or expired. */
     get(key: string): string | undefined {
         const entry = this.getLiveEntry(key);
 
@@ -398,6 +410,7 @@ export class Store {
         return this.adjustList(key, values, "l")
     }
 
+    /** Returns an inclusive list range; negative indexes count from the end. */
     lrange(key: string, start: number, stop: number): string[] {
         const entry = this.getLiveEntry(key);
 
@@ -462,6 +475,12 @@ export class Store {
         return this.adjustInteger(key, -1);
     }
 
+    /**
+     * Writes a JSON snapshot, omitting expired entries.
+     *
+     * @returns A promise that resolves after the snapshot is saved.
+     * @remarks Writes to a temporary file before renaming it to the snapshot path.
+     */
     async save(): Promise<void> {
         // check each keys before saving 
         for (const key of this.data.keys()) {
@@ -482,15 +501,27 @@ export class Store {
         }
     }
 
+    /**
+     * Reads a supported setting from this store's configuration.
+     *
+     * @param name - Configuration parameter name.
+     * @returns The setting value, or `undefined` if the name is unknown.
+     */
     getConfigValue(name: string): string | undefined {
         return getConfigValue(name, this.config);
     }
 
+    /**
+     * Changes `maxmemory` or `maxmemory-policy` for this store. Configuration is not persisted to snapshots.
+     *
+     * @param name - Configuration parameter name.
+     * @param value - New setting value.
+     * @throws {Error} If the setting or its value is unsupported or invalid.
+     */
     setConfigValue(name: string, value: string): void {
         switch (name.toLowerCase()) {
             case "maxmemory": {
                 const maxmemory = parseMemoryLimit(value);
-                // recalculate used bytes when maxmemory is set 
                 if (this.config.maxmemory === 0 && maxmemory > 0) {
                     this.recalculateUsedBytes();
                 }

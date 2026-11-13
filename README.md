@@ -84,7 +84,12 @@ Mini-Redis supports two policies:
 - `noeviction` (default): reject a write that would exceed the limit.
 - `sieve`: evict keys using the SIEVE policy until the write fits.
 
-The store estimates each entry's size from its UTF-8 key and value bytes plus a fixed overhead. This estimate is not the Node.js process's actual heap usage.
+When `maxmemory` is greater than `0`, Mini-Redis tracks an estimated size for each entry:
+
+- A string entry uses the UTF-8 byte lengths of its key and value, plus 50 bytes of fixed overhead.
+- A list entry uses the UTF-8 byte length of its key, the combined byte lengths of all list values, and the same 50-byte overhead.
+
+For example, the key `abc` with the string value `coffee` counts as `3 + 6 + 50 = 59` bytes. With the default unlimited setting (`maxmemory 0`), Mini-Redis skips this accounting. The estimate does not include actual JavaScript object, `Map`, allocator, or other Node.js process overhead, so it is not a measurement of heap usage.
 
 Loading a snapshot does not discard entries that exceed the configured limit. With `noeviction`, later writes fail until enough space is freed. With `sieve`, a later write can evict entries to make room. Changing `maxmemory` does not immediately evict entries; the policy applies when a write needs room. Runtime configuration changes are not saved across restarts.
 

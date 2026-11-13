@@ -1,6 +1,4 @@
-// for parse and serialise resp messages to communicate with redis server 
-
-// class for defining simple string  
+/** Represents a RESP simple string, distinct from a bulk string. */
 export class SimpleString {
   text: string;
   constructor(text: string) {
@@ -11,10 +9,17 @@ export class SimpleString {
 type RespValue = string | number | null | Error | RespValue[];
 type Cursor = { offset: number };
 
-// for detecting incomplete resp in chunks
+/** Signals that more input bytes are needed to finish parsing a RESP value. */
 export class IncompleteResp extends SyntaxError {}
 
-// handle val check for given length and data (then parse to number)
+/**
+ * Parses a signed decimal integer and rejects values outside JavaScript's safe integer range.
+ *
+ * @param value - Text to parse.
+ * @param desc - Name used in validation errors.
+ * @returns The parsed integer.
+ * @throws {SyntaxError} If the text is invalid or the result is not a safe integer.
+ */
 export function parseInteger(value : string, desc:string = "integer") : number {
   // check if the value is a number
   if (!/^-?\d+$/.test(value)) { 
@@ -22,7 +27,6 @@ export function parseInteger(value : string, desc:string = "integer") : number {
   }
 
   const parsedInt = Number(value)
-  // check if number is a safe int 
   if (!Number.isSafeInteger(parsedInt)) { 
     throw new SyntaxError(`incorrect ${desc} value`)
   }
@@ -30,7 +34,7 @@ export function parseInteger(value : string, desc:string = "integer") : number {
   return parsedInt; 
 }
 
-// save the line after the marker until its end where length is not given (so not bulk string) and update the offset accordingly
+// RESP line values end at the next CRLF; bulk-string bodies use their declared byte length instead.
 function readLine(input: Buffer, cursor: Cursor) : string { 
   // starting from offset search for the end of the line using "\r\n"
   const end = input.indexOf("\r\n", cursor.offset, "ascii")
@@ -122,7 +126,14 @@ function parseValue(input:Buffer, cursor: Cursor): RespValue {
   }
 }
 
-// parser function for processing input into understandable pieces for command handling  
+/**
+ * Parses all RESP values in the input buffer.
+ *
+ * @param input - RESP bytes or their UTF-8 string representation.
+ * @returns Parsed RESP values in input order.
+ * @throws {IncompleteResp} If the input ends before a value is complete.
+ * @throws {SyntaxError} If the input contains malformed or unsupported RESP.
+ */
 export function parse(input: string | Buffer): RespValue[] {
   // reuse buffer if already exist 
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"); 
@@ -139,7 +150,7 @@ export function parse(input: string | Buffer): RespValue[] {
   return values;
 }
 
-// read a number straight from the bytes
+// Read decimal digits directly from the buffer to avoid allocating a header string.
 function readAsciiInteger(input: Buffer, cursor: Cursor, description: string): number {
   let negative = false;
 
@@ -191,7 +202,14 @@ function readAsciiInteger(input: Buffer, cursor: Cursor, description: string): n
   return parsed;
 }
 
-// specialized parser for handling command-array (anything that has * as the first byte) <- pretty much every commands 
+/**
+ * Parses consecutive RESP arrays whose elements are bulk strings, the common client command format.
+ *
+ * @param input - RESP bytes or their UTF-8 string representation.
+ * @returns Parsed commands, or `undefined` when the input uses another RESP shape.
+ * @throws {IncompleteResp} If the input ends before a command is complete.
+ * @throws {SyntaxError} If a command header or bulk string is malformed.
+ */
 export function parseCommandBatch(input: string | Buffer): (string | null)[][] | undefined {
   // reuse buffer if exist else use a new one
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8");
@@ -262,7 +280,12 @@ export function parseCommandBatch(input: string | Buffer): (string | null)[][] |
   return commands;
 }
 
-// serialize the response 
+/**
+ * Serializes a supported value as RESP2.
+ *
+ * @param data - Value to encode.
+ * @returns RESP2 bytes represented as a string.
+ */
 export function serialize(data: string | number | SimpleString | null | Error | string[]):string { 
   // null case
   if (data === null) { 

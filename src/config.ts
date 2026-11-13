@@ -1,21 +1,30 @@
 export type Config = {
+  /** Memory limit in bytes; `0` disables the limit. */
   maxmemory: number;
+  /** Supported eviction policy: `noeviction` or `sieve`. */
   maxmemoryPolicy: string;
+  /** Compatibility value returned by `CONFIG GET`; not runtime-settable. */
   save: string;
+  /** Compatibility value returned by `CONFIG GET`; not runtime-settable. */
   appendonly: string;
 };
 
-// configs for redis-benchmark & cli :p 
+/** Default server configuration. */
 export const serverConfig:Config = {
-  maxmemory: 0,            // 0 = unlimited, will prob have to take mb as input and calc the appropriate keys limit
+  maxmemory: 0,
   maxmemoryPolicy: "noeviction",
   save: "",
   appendonly: "no",
 } as const;
 
-// parse memory given (i.e. 100mb) into bytes
+/**
+ * Parses a memory limit with an optional binary unit suffix.
+ *
+ * @param value - Byte count or a value with a `k`, `kb`, `m`, `mb`, `g`, or `gb` suffix.
+ * @returns The limit in bytes.
+ * @throws {Error} If the value is invalid or exceeds the safe integer range.
+ */
 export function parseMemoryLimit(value: string): number {
-  // get the unit
   const match = /^(\d+)(b|kb|k|mb|m|gb|g)?$/i.exec(value.trim());
   if (!match) {
     throw new Error("invalid maxmemory value");
@@ -50,6 +59,13 @@ export function parseMemoryLimit(value: string): number {
   return bytes;
 }
 
+/**
+ * Reads a supported setting by name.
+ *
+ * @param name - Configuration parameter name.
+ * @param config - Configuration object to read.
+ * @returns The setting value, or `undefined` if the name is unknown.
+ */
 export function getConfigValue(name: string, config: Config = serverConfig): string | undefined {
   switch (name.toLowerCase()) {
     case "maxmemory":

@@ -4,6 +4,14 @@ import { handleMessages } from "@/src/messages.js";
 import { IncompleteResp } from "@/src/resp.js";
 import { serverConfig, type Config } from "@/src/config.js";
 
+/**
+ * Starts the Redis-like server and loads its snapshot.
+ *
+ * @param port - TCP port to listen on. Defaults to `6379`.
+ * @param savePath - Optional path to the JSON snapshot. Defaults to `dump.json` in the current working directory.
+ * @param config - Server configuration. Defaults to `serverConfig`.
+ * @returns A promise that resolves when the server is listening.
+ */
 export async function startServer(
     port: number = 6379,
     savePath?: string,
@@ -12,7 +20,6 @@ export async function startServer(
     // load data into store using the savepath
     const store = await Store.load(savePath, config);
 
-    // create server 
     const server = net.createServer((socket) => { 
         // toggle for deciding if an async command is in flight
         let asyncCommandInFlight = false;
@@ -26,7 +33,6 @@ export async function startServer(
         // initialize empty pending buffer for holding onto partial chunk (if any)
         let pending = Buffer.alloc(0);
 
-        // process the chunk of data 
         const processChunk = (chunk: Buffer | string): void => {
             const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
             pending = Buffer.concat([pending, bytes]);
@@ -89,15 +95,13 @@ export async function startServer(
             }
         };
 
-        // when the socket gets data
         socket.on("data", (chunk) =>  { 
             // console.log("received:", JSON.stringify(chunk.toString()));      // for debugging
 
             if (asyncCommandInFlight || queuedChunks.length > 0) {
-                // if the async command in flight, enqueue chunks 
+                // Preserve request order while an asynchronous command is running.
                 queuedChunks.push(chunk);
             } else {
-                // else process the chunk
                 processChunk(chunk);
             }
         })
@@ -111,6 +115,6 @@ export async function startServer(
     
     return new Promise((resolve) => {
         // console.log("SERVER UP")
-        server.listen(port, () => resolve(server));   // wait until it's really listening
+        server.listen(port, () => resolve(server)); 
     });
 }

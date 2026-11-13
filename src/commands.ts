@@ -1,8 +1,6 @@
-// handles parsed text 
 import { Store } from "@/src/store.js";
 import { SimpleString, parseInteger } from "@/src/resp.js";
 
-// commandResult holds all possible return type 
 type CommandResult = string | number | SimpleString | null | Error | string[];
 
 // for response part of the map (takes args and curr store as input) 
@@ -12,7 +10,7 @@ type Handler = (
   store: Store
 ) => CommandResult | Promise<CommandResult>;
 
-// helper parser for expire timer 
+// EX/PX are relative durations; EXAT/PXAT are absolute timestamps.
 function parseExpiry(optionExp : string, timer : string | null | undefined): number {
     let multiplier: number;
     let relative: boolean;          // relative = decide to use date.now or not in calculation
@@ -40,7 +38,6 @@ function parseExpiry(optionExp : string, timer : string | null | undefined): num
             throw new SyntaxError(`the command ${optionExp} doesn't exist`)
     }
 
-    // val checks 
     if (timer===undefined || timer === null|| parseInteger(timer) <= 0) { 
         throw new SyntaxError("invalid timer value")
     }
@@ -304,6 +301,14 @@ const handlers = new Map<string, Handler>([
     }]
 ])
 
+/**
+ * Runs one parsed command against the store.
+ *
+ * @param command - Command name followed by its arguments.
+ * @param store - Store used by the command handler.
+ * @returns The command result, or a promise for asynchronous commands such as `SAVE`.
+ * @throws {Error} If the command is unknown or its arguments are invalid.
+ */
 export function handleCommands(
   command: (string | null)[],
   store: Store

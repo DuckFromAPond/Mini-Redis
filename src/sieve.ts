@@ -1,13 +1,12 @@
 interface Node {
     key: string;
-    visited: boolean;         // SIEVE metadata
+    visited: boolean; 
     prev: Node | null;
     next: Node | null;
     // note: prev is on the side of the head so prev <-> curr <-> next
 };
 
-// map holds the key of data and its metadata as a node (pretty much a doubly linked list)
-// sieve handles cache eviction when nearing full capacity (only works when maxmemory is set)
+/** Tracks keys for SIEVE eviction. Accessed keys receive a second chance before eviction. */
 export class Sieve {
     private map = new Map<string, Node>();
     private head: Node | null = null;   // for addding new 
@@ -26,7 +25,7 @@ export class Sieve {
             node.prev.next = node.next;
         } 
         else { 
-            // change the head instead if the previous node doesn't exist  (node is the head)
+            // change the head instead if the previous node doesn't exist (node is the head)
             this.head = node.next;                    
         } 
 
@@ -51,22 +50,19 @@ export class Sieve {
 
         // initialize node
         const node: Node = { key, visited: false, prev: null, next: this.head };
-        // if node at head exist 
+
+        // if node at head exist then change the head nodes's prev to point to the new node 
         if (this.head) { 
-            // change the head nodes's prev to point to the new node 
             this.head.prev = node;
         }
         
-        // set new node as head 
         this.head = node;
         
-        // if tail does not exist 
+        // if tail does not exist then set tail as node
         if (!this.tail) { 
-            // first node is also the tail
             this.tail = node;
-        }              
+        }
         
-        // insert to map
         this.map.set(key, node);
     }
 
@@ -88,7 +84,12 @@ export class Sieve {
         this.map.delete(key);
     }
 
-    // delete entry at hand when entry is passed limit
+
+    /**
+     * Evicts the next unvisited key, clearing visited bits as the hand scans the list.
+     *
+     * @returns The evicted key, or `undefined` if the list is empty.
+     */
     evict(): string | undefined {
         // get node at the hand or if hand is null go to tail 
         let node = this.hand ?? this.tail;
@@ -104,9 +105,9 @@ export class Sieve {
 
         // get key of the data stored node to evict in the store map 
         const key = node.key;
+        
         // decide node to set hand to 
         const nextHand = node.prev ?? this.tail;
-        // unlink node
         this.unlink(node);
 
         // update hand 

@@ -7,7 +7,6 @@ type RespValue = string | number | null | Error | RespValue[];
 function serializeError(error: unknown): string {
     // transform the throws into the error message 
     if (error instanceof Error) {
-        // all transformation unified in the serialize 
         return serialize(error);
     }
     throw error;
@@ -18,7 +17,14 @@ function isCommandArray(value: unknown): value is (string | null)[] {
         value.every((item) => typeof item === "string" || item === null);
 }
 
-// message = the whole user input (a litle too late to rename for better clarity　ごめんなさい。。。) 
+/**
+ * Parses and executes all RESP commands in a buffer and serializes their replies.
+ *
+ * @param input - RESP bytes or their UTF-8 string representation.
+ * @param store - Store used to execute commands.
+ * @returns Serialized replies, or a promise when any command is asynchronous.
+ * @throws {IncompleteResp} If the buffer ends before a complete RESP value is received.
+ */
 export function handleMessages(input: string | Buffer, store: Store): string | Promise<string> {
     let values: RespValue[]; 
     try { 
@@ -40,8 +46,8 @@ export function handleMessages(input: string | Buffer, store: Store): string | P
                 return serialize(new Error("expected an array"));
             }
 
-            // the parser allows the rest RESP type in array but I don't know what to do with them 
-            // most of the input will be entered and parsed as a bulk string even if it is an int or something else anyways
+            // the parser allows the rest RESP type in array
+            // but most of the input will be entered and parsed as a bulk string even if it is an int or something else anyways
             if (!isCommandArray(value)) {
                 return serialize(new Error("command arguments must be strings or null"));
             }
