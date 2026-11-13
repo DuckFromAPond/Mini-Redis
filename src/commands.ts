@@ -1,7 +1,6 @@
 // handles parsed text 
 import { Store } from "@/src/store.js";
 import { SimpleString, parseInteger } from "@/src/resp.js";
-import { getConfigValue } from "@/src/config.js";
 
 // commandResult holds all possible return type 
 type CommandResult = string | number | SimpleString | null | Error | string[];
@@ -131,7 +130,7 @@ const handlers = new Map<string, Handler>([
         return value;
     }], 
 
-    ["EXIST", (args, store) => { 
+    ["EXISTS", (args, store) => { 
         // nothing passed in
         if (args.length < 1) { 
             throw new Error ("no key passed in")
@@ -271,29 +270,36 @@ const handlers = new Map<string, Handler>([
     }],
 
     ["CONFIG", (args, store) => {  
-        if (args.length !== 2) { 
-            throw new Error("wrong number of arguments given")
-        }
-
-        const [command, key] = args;
-
+        const [command, key, value] = args;
         if (command === undefined || command === null) { 
             throw new Error("wrong number of arguments for CONFIG commands")
-        }
-        
-        if (key === undefined || key === null) { 
-            throw new Error("invalid arguments given")
         }
 
         switch (command.toUpperCase()) { 
             case "GET": {
+                if (args.length !== 2) {
+                    throw new Error("wrong number of arguments for CONFIG GET");
+                }
+                if (key === undefined || key === null) {
+                    throw new Error("invalid CONFIG parameter");
+                }
+
                 const configValue = store.getConfigValue(key);
                 return configValue === undefined ? [] : [key, configValue];
             }
-            // case "SET": 
-            // TODO
+            case "SET": {
+                if (args.length !== 3) {
+                    throw new Error("wrong number of arguments for CONFIG SET");
+                }
+                if (key === undefined || key === null || value === undefined || value === null) {
+                    throw new Error("invalid CONFIG parameter or value");
+                }
+
+                store.setConfigValue(key, value);
+                return new SimpleString("OK");
+            }
             default: 
-                throw new Error(`unsupported CONFIG command ${key}`)
+                throw new Error(`unsupported CONFIG command ${command}`)
         }
     }]
 ])

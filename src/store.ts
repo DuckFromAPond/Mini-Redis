@@ -3,7 +3,7 @@ import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Sieve } from "@/src/sieve.js";
-import { serverConfig, type Config, getConfigValue } from "@/src/config.js";
+import { serverConfig,type Config, getConfigValue, parseMemoryLimit } from "@/src/config.js";
 
 // entry can either be a list or a string 
 type Entry = 
@@ -12,8 +12,10 @@ type Entry =
 
 // set the default save path to current dir in a json file named "dump.json"
 const defaultSavePath = resolve(process.cwd(), "dump.json");
-const ENTRY_OVERHEAD = 50;
 
+
+// using a set estimated overhead cost for each key here for other cost not accounted by the size of the entry & key
+const ENTRY_OVERHEAD = 50;
 
 
 function invalidSnapshotError(savePath: string, detail: string): SyntaxError {
@@ -57,14 +59,57 @@ function isEntry(value: unknown): value is Entry {
 // store handles data manip 
 export class Store { 
     private readonly data = new Map<string, Entry>();
-    private readonly policy = new Sieve();
+    private policy = new Sieve();
+    private sieveEnabled: boolean;
+
     private usedBytes = 0;
     
     // default constructor to define a readonly savepath using the default 
     constructor(
         private readonly savePath = defaultSavePath,
         private readonly config:Config = serverConfig,
-    ) {}
+    ) {
+        this.sieveEnabled = this.isSieveEnabled();
+    }
+
+    // helper for determining if sieve is enabled 
+    private isSieveEnabled(): boolean {
+        return this.config.maxmemory > 0 && this.config.maxmemoryPolicy === "sieve";
+    }
+
+    // helper for enabling sieve map and sync data (so that it will only insert into the sieve map when it is enabled) 
+    private syncSieve(): void {
+        const enabled = this.isSieveEnabled();
+        if (enabled === this.sieveEnabled) return;
+
+        this.policy = new Sieve();
+        this.sieveEnabled = enabled;
+        if (!enabled) return;
+
+        // start inserting into the sieve map
+        for (const key of this.data.keys()) {
+            if (this.getLiveEntry(key) !== undefined) {
+                this.policy.onInsert(key);
+            }
+        }
+    }
+
+    // helper for recalculating used bytes
+    private recalculateUsedBytes(): void {
+        let total = 0;
+        const now = Date.now();
+
+        // go through each entry and key and calculate the total used bytes
+        for (const [key, entry] of this.data) {
+            if (entry.expiresAt !== undefined && now >= entry.expiresAt) {
+                this.data.delete(key);
+                continue;
+            }
+            total += this.sizeOf(key, entry);
+        }
+
+        this.usedBytes = total;
+    }
 
     // helper for calculating size of entry 
     private sizeOf(key: string, entry: Entry): number {
@@ -74,39 +119,67 @@ export class Store {
         return Buffer.byteLength(key) + valueBytes + ENTRY_OVERHEAD;
     }
 
-    // helper for comparing new size with max memory set 
-    private canFit(key: string, nextEntry: Entry) : boolean { 
-        const existing = this.data.get(key);
-        const oldSize = existing ? this.sizeOf(key, existing) : 0;
-        
-        const projectedBytes = this.usedBytes - oldSize + this.sizeOf(key, nextEntry);
-
-        // maxmemory = 0 always pass 
-        return (this.config.maxmemory === 0) || (projectedBytes <= this.config.maxmemory);
-
-        // TODO need to connnect with sieve here instead of returning true 
-    }
-
     // helper function for checking expiery bfore getting/returning data
     private getLiveEntry(key: string): Entry | undefined {
         const entry = this.data.get(key);
 
         // if expire date exist and date over the expiry then delete data and return undef 
         if (entry?.expiresAt !== undefined && Date.now() >= entry.expiresAt) {
-            const entrySize = entry ? this.sizeOf(key, entry) : 0;
             this.data.delete(key);
-            
-            this.usedBytes -= entrySize;
+            if (this.sieveEnabled) {
+                this.policy.onDelete(key);
+            }
+            if (this.config.maxmemory > 0) {
+                this.usedBytes -= this.sizeOf(key, entry);
+            }
             return undefined;
         }
 
         return entry;
     }
 
+    // helper for evicting entry when passed the limit 
+    private makeRoom(key: string, nextEntry: Entry): boolean {
+        const limit = this.config.maxmemory;
+        // maxmemory = 0 means use as much as available 
+        if (limit === 0) return true;
+
+        const newSize = this.sizeOf(key, nextEntry);
+        // just end early if new entry by itself bigger than limit 
+        if (newSize > limit) return false;
+
+        // calculate projected usage
+        const projectedUsage = () => {
+            const oldEntry = this.data.get(key);
+            const oldSize = oldEntry ? this.sizeOf(key, oldEntry) : 0;
+            return this.usedBytes - oldSize + newSize;
+        };
+
+        // keep evicting until below limit 
+        while (projectedUsage() > limit) {
+            if (this.config.maxmemoryPolicy !== "sieve") return false;
+
+            // evict remove entry's metadata and key in the sieve map and returns entry's key
+            const victimKey = this.policy.evict();
+            if (victimKey === undefined) return false;
+
+            // check entry existence before deletion
+            const victim = this.data.get(victimKey);
+            if (victim === undefined) {
+                throw new Error(`SIEVE returned missing Store key: ${victimKey}`);
+            }
+
+            // delete entry from store with its returned key
+            this.data.delete(victimKey);
+            this.usedBytes -= this.sizeOf(victimKey, victim);
+        }
+
+        return true;
+    }
+
     // helper function for incrementing/decrementing value (mostly just validation checks)
     private adjustInteger(key: string, delta: 1 | -1): number {
         const entry = this.getLiveEntry(key);
-        const oldSize = (entry === undefined) ? 0 : this.sizeOf(key, entry);
 
         // if entry does not exist, make new key with value of 1 or -1
         if (entry === undefined) {
@@ -143,16 +216,27 @@ export class Store {
             ...(entry.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {}),
         };
 
-        if (!this.canFit(key, nextEntry)) {
+        // cannot make room after loading and trying to set 
+        if (!this.makeRoom(key, nextEntry)) {
             throw new Error("OOM command not allowed when used memory exceeds maxmemory");
         }
 
-        const newSize = this.sizeOf(key, nextEntry);
-
+        const storedEntry = this.data.get(key);
         this.data.set(key, nextEntry);
-        this.usedBytes += newSize - oldSize;
 
-        entry.value = String(updated);
+        if (this.sieveEnabled) {
+            if (storedEntry === undefined) {
+                this.policy.onInsert(key);
+            } else {
+                this.policy.onAccess(key);
+            }
+        }
+
+        if (this.config.maxmemory > 0) {
+            const oldSize = storedEntry === undefined ? 0 : this.sizeOf(key, storedEntry);
+            this.usedBytes += this.sizeOf(key, nextEntry) - oldSize;
+        }
+
         return updated;
     }
 
@@ -174,16 +258,24 @@ export class Store {
             value: nextValues, ...(entry?.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {}),
         };
         
-        if (!this.canFit(key, nextEntry)) {
+        if (!this.makeRoom(key, nextEntry)) {
             throw new Error("OOM command not allowed when used memory exceeds maxmemory");
         }
 
-        const oldSize = entry ? this.sizeOf(key, entry) : 0;
-        const newSize = this.sizeOf(key, nextEntry);
-
+        const storedEntry = this.data.get(key);
         // set new change 
         this.data.set(key, nextEntry);
-        this.usedBytes += newSize - oldSize;
+        if (this.sieveEnabled) {
+            if (storedEntry === undefined) {
+                this.policy.onInsert(key);
+            } else {
+                this.policy.onAccess(key);
+            }
+        }
+        if (this.config.maxmemory > 0) {
+            const oldSize = storedEntry === undefined ? 0 : this.sizeOf(key, storedEntry);
+            this.usedBytes += this.sizeOf(key, nextEntry) - oldSize;
+        }
 
         return nextValues.length;
     }
@@ -238,7 +330,12 @@ export class Store {
 
             if (entry.expiresAt === undefined || Date.now() < entry.expiresAt) {
                 store.data.set(key, entry);
-                store.usedBytes += store.sizeOf(key, entry);
+                if (store.config.maxmemory > 0) {
+                    store.usedBytes += store.sizeOf(key, entry);
+                }
+                if (store.sieveEnabled) {
+                    store.policy.onInsert(key);
+                }
             }
         }
 
@@ -247,7 +344,7 @@ export class Store {
      
     set(key: string, value: string, expiresAt?: number): void {
         // check entry with key in case it is overwriting
-        const oldEntry = this.getLiveEntry(key);
+        this.getLiveEntry(key);
 
         // make a new Entry object with new values to compare if is within max memory 
         const nextEntry: Entry = {
@@ -256,16 +353,26 @@ export class Store {
             ...(expiresAt !== undefined ? { expiresAt } : {}),
         };
         
-        if (!this.canFit(key, nextEntry)) {
+        if (!this.makeRoom(key, nextEntry)) {
             throw new Error("OOM command not allowed when used memory exceeds maxmemory");
         }
 
-        const oldSize = (oldEntry === undefined) ? 0 : this.sizeOf(key, oldEntry);
-        const newSize = this.sizeOf(key, nextEntry);
-
+        const storedEntry = this.data.get(key);
         // set new change 
         this.data.set(key, nextEntry);
-        this.usedBytes += newSize - oldSize;
+
+        //
+        if (this.sieveEnabled) {
+            if (storedEntry === undefined) {
+                this.policy.onInsert(key);
+            } else {
+                this.policy.onAccess(key);
+            }
+        }
+        if (this.config.maxmemory > 0) {
+            const oldSize = storedEntry === undefined ? 0 : this.sizeOf(key, storedEntry);
+            this.usedBytes += this.sizeOf(key, nextEntry) - oldSize;
+        }
     }
 
     get(key: string): string | undefined {
@@ -281,6 +388,9 @@ export class Store {
             throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
         }
 
+        if (this.sieveEnabled) {
+            this.policy.onAccess(key);
+        }
         return entry.value;
     }
 
@@ -299,6 +409,9 @@ export class Store {
         }
 
         const length = entry.value.length;
+        if (this.sieveEnabled) {
+            this.policy.onAccess(key);
+        }
 
         // negative indexes count from the tail
         let from = start < 0 ? length + start : start;
@@ -323,14 +436,21 @@ export class Store {
     }
 
     exists(key: string): boolean {
-        return this.getLiveEntry(key) !== undefined;
+        const exists = this.getLiveEntry(key) !== undefined;
+
+        if (exists && this.sieveEnabled) {
+            this.policy.onAccess(key);
+        }
+
+        return exists;
     }
 
     delete(key: string): boolean {
         const entry = this.getLiveEntry(key);
-        const entrySize = entry ? this.sizeOf(key, entry) : 0;
-
-        this.usedBytes -= entrySize;
+        if (entry !== undefined && this.config.maxmemory > 0) {
+            this.usedBytes -= this.sizeOf(key, entry);
+        }
+        if (this.sieveEnabled) this.policy.onDelete(key);
         return this.data.delete(key);
     }
 
@@ -364,5 +484,34 @@ export class Store {
 
     getConfigValue(name: string): string | undefined {
         return getConfigValue(name, this.config);
+    }
+
+    setConfigValue(name: string, value: string): void {
+        switch (name.toLowerCase()) {
+            case "maxmemory": {
+                const maxmemory = parseMemoryLimit(value);
+                // recalculate used bytes when maxmemory is set 
+                if (this.config.maxmemory === 0 && maxmemory > 0) {
+                    this.recalculateUsedBytes();
+                }
+                
+                this.config.maxmemory = maxmemory;
+                this.syncSieve();
+                return;
+            }
+            case "maxmemory-policy": {
+                const policy = value.toLowerCase();
+                
+                if (policy !== "noeviction" && policy !== "sieve") {
+                    throw new Error(`unsupported maxmemory policy: ${value}`);
+                }
+
+                this.config.maxmemoryPolicy = policy;
+                this.syncSieve();
+                return;
+            }
+            default:
+                throw new Error(`unsupported CONFIG parameter: ${name}`);
+        }
     }
 }

@@ -46,13 +46,13 @@ test('ERROR SET command', () => {
 test('SET & EXIST command', () => {    
     const store = new Store();                   
     expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\norder\r\n$6\r\ncoffee\r\n", store)).toEqual("+OK\r\n")  
-    expect(handleMessages("*2\r\n$5\r\nexist\r\n$5\r\norder\r\n", store)).toEqual(":1\r\n")
-    expect(handleMessages("*2\r\n$5\r\nexist\r\n$5\r\nplace\r\n", store)).toEqual(":0\r\n")
+    expect(handleMessages("*2\r\n$6\r\nexists\r\n$5\r\norder\r\n", store)).toEqual(":1\r\n")
+    expect(handleMessages("*2\r\n$6\r\nexists\r\n$5\r\nplace\r\n", store)).toEqual(":0\r\n")
 
     expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\ndrink\r\n$3\r\ntea\r\n", store)).toEqual("+OK\r\n") 
     expect(handleMessages("*3\r\n$3\r\nset\r\n$5\r\nprice\r\n$4\r\n5.99\r\n", store)).toEqual("+OK\r\n") 
 
-    expect(handleMessages("*4\r\n$5\r\nexist\r\n$5\r\norder\r\n$5\r\ndrink\r\n$5\r\nprice\r\n", store)).toEqual(":3\r\n")
+    expect(handleMessages("*4\r\n$6\r\nexists\r\n$5\r\norder\r\n$5\r\ndrink\r\n$5\r\nprice\r\n", store)).toEqual(":3\r\n")
         
 })
 

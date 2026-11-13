@@ -56,7 +56,7 @@ test("2 clients test", async () => {
     }
 });
 
-test("INCR, DECR, expiry SET, EXIST, and DEL over a real connection", async () => {
+test("INCR, DECR, expiry SET, EXISTS, and DEL over a real connection", async () => {
     const server = await startServer(0);
     const { port } = server.address() as net.AddressInfo;
     const client = new Redis({ port, protocol: 2, disableClientInfo: true, enableReadyCheck: false });
@@ -68,7 +68,7 @@ test("INCR, DECR, expiry SET, EXIST, and DEL over a real connection", async () =
         expect(await client.get("counter")).toBe("1");
 
         expect(await client.set("temporary", "value", "PX", 1000)).toBe("OK");
-        expect(await client.call("EXIST", "temporary")).toBe(1);
+        expect(await client.call("EXISTS", "temporary")).toBe(1);
 
         // wait in real time
         // await new Promise((resolve) => setTimeout(resolve, 1100));
@@ -78,10 +78,10 @@ test("INCR, DECR, expiry SET, EXIST, and DEL over a real connection", async () =
         vi.setSystemTime(Date.now() + 1100);
 
         expect(await client.get("temporary")).toBe(null);
-        expect(await client.call("EXIST", "temporary")).toBe(0);
+        expect(await client.call("EXISTS", "temporary")).toBe(0);
 
         expect(await client.del("counter")).toBe(1);
-        expect(await client.call("EXIST", "counter")).toBe(0);
+        expect(await client.call("EXISTS", "counter")).toBe(0);
     } finally {
         client.disconnect();
         await new Promise<void>((resolve) => server.close(() => resolve()));

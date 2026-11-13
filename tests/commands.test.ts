@@ -5,6 +5,7 @@ import { SimpleString } from '@/src/resp.js';
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { serverConfig } from "@/src/config.js";
 
 // PING test 
 test('PING command', () => { 
@@ -37,6 +38,28 @@ test('ECHO command', () => {
 test('ECHO rejects extra arguments', () => { 
     expect(() => handleCommands(["echo", "hello", "world"], new Store())).toThrow("incorrect number of arguments given")
 })
+
+test("CONFIG SET maxmemory accepts byte units and is visible to CONFIG GET", () => {
+    const store = new Store(undefined, { ...serverConfig });
+
+    expect(handleCommands(["CONFIG", "SET", "maxmemory", "100mb"], store)).toEqual(new SimpleString("OK"));
+    expect(handleCommands(["CONFIG", "GET", "maxmemory"], store)).toEqual(["maxmemory", String(100 * 1024 * 1024)]);
+});
+
+test("CONFIG SET maxmemory-policy changes the active eviction policy", () => {
+    const store = new Store(undefined, { ...serverConfig });
+
+    expect(handleCommands(["CONFIG", "SET", "maxmemory-policy", "SIEVE"], store)).toEqual(new SimpleString("OK"));
+    expect(handleCommands(["CONFIG", "GET", "maxmemory-policy"], store)).toEqual(["maxmemory-policy", "sieve"]);
+});
+
+test("CONFIG SET rejects invalid values and unsupported parameters", () => {
+    const store = new Store(undefined, { ...serverConfig });
+
+    expect(() => handleCommands(["CONFIG", "SET", "maxmemory", "-1"], store)).toThrow("invalid maxmemory value");
+    expect(() => handleCommands(["CONFIG", "SET", "maxmemory-policy", "allkeys-lru"], store)).toThrow("unsupported maxmemory policy");
+    expect(() => handleCommands(["CONFIG", "SET", "appendonly", "yes"], store)).toThrow("unsupported CONFIG parameter");
+});
 
 test("lpush on a string key throws WRONGTYPE", () => {
     const store = new Store();
