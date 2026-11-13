@@ -2,7 +2,7 @@ import { describe,test, expect } from "vitest"
 import { Store } from "@/src/store.js";
 
 // test("keeps an accessed key when evicting", () => {
-//     const store = new Store({ maxKeys: 2 }); 
+//     const store = new Store(); 
 
 //     store.set("a", "1");
 //     store.set("b", "2");

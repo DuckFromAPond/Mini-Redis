@@ -74,15 +74,18 @@ export class Store {
         return Buffer.byteLength(key) + valueBytes + ENTRY_OVERHEAD;
     }
 
-    // TODO add this check and the sizeof + usedbyte update to all updates
+    // helper for comparing new size with max memory set 
     private canFit(key: string, nextEntry: Entry) : boolean { 
         const existing = this.data.get(key);
         const oldSize = existing ? this.sizeOf(key, existing) : 0;
+        
         const projectedBytes = this.usedBytes - oldSize + this.sizeOf(key, nextEntry);
 
-        return this.config.maxmemory === 0 || projectedBytes <= this.config.maxmemory;
-    }
+        // maxmemory = 0 always pass 
+        return (this.config.maxmemory === 0) || (projectedBytes <= this.config.maxmemory);
 
+        // TODO need to connnect with sieve here instead of returning true 
+    }
 
     // helper function for checking expiery bfore getting/returning data
     private getLiveEntry(key: string): Entry | undefined {
@@ -90,7 +93,10 @@ export class Store {
 
         // if expire date exist and date over the expiry then delete data and return undef 
         if (entry?.expiresAt !== undefined && Date.now() >= entry.expiresAt) {
+            const entrySize = entry ? this.sizeOf(key, entry) : 0;
             this.data.delete(key);
+            
+            this.usedBytes -= entrySize;
             return undefined;
         }
 
@@ -100,6 +106,7 @@ export class Store {
     // helper function for incrementing/decrementing value (mostly just validation checks)
     private adjustInteger(key: string, delta: 1 | -1): number {
         const entry = this.getLiveEntry(key);
+        const oldSize = (entry === undefined) ? 0 : this.sizeOf(key, entry);
 
         // if entry does not exist, make new key with value of 1 or -1
         if (entry === undefined) {
@@ -129,6 +136,21 @@ export class Store {
         if (!Number.isSafeInteger(updated)) {
             throw new Error("value out of range");
         }
+        
+        const nextEntry: Entry = {
+            type: "string",
+            value: String(updated),
+            ...(entry.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {}),
+        };
+
+        if (!this.canFit(key, nextEntry)) {
+            throw new Error("OOM command not allowed when used memory exceeds maxmemory");
+        }
+
+        const newSize = this.sizeOf(key, nextEntry);
+
+        this.data.set(key, nextEntry);
+        this.usedBytes += newSize - oldSize;
 
         entry.value = String(updated);
         return updated;
@@ -138,25 +160,32 @@ export class Store {
     private adjustList(key: string, values: string[], dir: "l" | "r"): number { 
         let entry = this.getLiveEntry(key);
 
-        // init list if entry is undef 
-        if (entry === undefined) {
-            entry = { type: "list", value: [] };
-            this.data.set(key, entry);
-        } else if (entry.type === "string") {
+        if (entry?.type === "string") {
             throw new Error("WRONGTYPE operation against a key holding the wrong kind of value");
         }
 
-        // loop through values and push to the head list
-        for (const value of values) {
-            if (dir === "l") { 
-                entry.value.unshift(value);
-            }
-            else if (dir === "r" ) { 
-                entry.value.push(value)
-            }
+        const entryValues = entry?.value ?? [];
+        // get new values by adding new entry value with existing values
+        const nextValues = dir === "l" ? [...values].reverse().concat(entryValues) : entryValues.concat(values);
+        
+        // make a new Entry object with new values to compare if is within max memory 
+        const nextEntry: Entry = {
+            type: "list",
+            value: nextValues, ...(entry?.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {}),
+        };
+        
+        if (!this.canFit(key, nextEntry)) {
+            throw new Error("OOM command not allowed when used memory exceeds maxmemory");
         }
 
-        return entry.value.length;
+        const oldSize = entry ? this.sizeOf(key, entry) : 0;
+        const newSize = this.sizeOf(key, nextEntry);
+
+        // set new change 
+        this.data.set(key, nextEntry);
+        this.usedBytes += newSize - oldSize;
+
+        return nextValues.length;
     }
 
     // static makes load method belongs to the Store class itself and not each instance itself
@@ -217,12 +246,26 @@ export class Store {
     }
      
     set(key: string, value: string, expiresAt?: number): void {
-        this.data.set(key, {
+        // check entry with key in case it is overwriting
+        const oldEntry = this.getLiveEntry(key);
+
+        // make a new Entry object with new values to compare if is within max memory 
+        const nextEntry: Entry = {
             type: "string",
             value,
             ...(expiresAt !== undefined ? { expiresAt } : {}),
-        });
+        };
+        
+        if (!this.canFit(key, nextEntry)) {
+            throw new Error("OOM command not allowed when used memory exceeds maxmemory");
+        }
 
+        const oldSize = (oldEntry === undefined) ? 0 : this.sizeOf(key, oldEntry);
+        const newSize = this.sizeOf(key, nextEntry);
+
+        // set new change 
+        this.data.set(key, nextEntry);
+        this.usedBytes += newSize - oldSize;
     }
 
     get(key: string): string | undefined {
@@ -284,7 +327,10 @@ export class Store {
     }
 
     delete(key: string): boolean {
-        this.getLiveEntry(key);
+        const entry = this.getLiveEntry(key);
+        const entrySize = entry ? this.sizeOf(key, entry) : 0;
+
+        this.usedBytes -= entrySize;
         return this.data.delete(key);
     }
 
