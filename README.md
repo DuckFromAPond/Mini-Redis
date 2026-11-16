@@ -2,6 +2,10 @@
 
 Mini-Redis is a small Redis-like server written in TypeScript. It implements a subset of Redis commands and RESP2 to explore how a server parses TCP data, executes commands, and returns responses.
 
+
+https://github.com/user-attachments/assets/bbb2e7ee-f52f-4915-b262-e843acd20c99
+
+
 ## Requirements
 
 - Node.js and npm
